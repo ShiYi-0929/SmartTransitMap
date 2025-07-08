@@ -3,5 +3,5 @@
 </template>
 
 <script setup>
-import TrafficStats from '../components/TrafficStats.vue'
+import TrafficStats from '../modules/trafficVisualization/TrafficStates.vue'
 </script> 
