@@ -13,7 +13,7 @@
 
 <script setup>
 import {ref} from 'vue'
-import {getTrafficStats} from '../api/traffic'
+import {getTrafficStats} from '../../api/traffic.js'
 
 const stats = ref({})
 
