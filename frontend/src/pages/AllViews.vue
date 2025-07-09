@@ -12,7 +12,7 @@
                 <h2>账号密码登录</h2>
                 <div class="login-options">
                   <span @click="navigateTo('captcha-login')">验证码登录</span>
-                  <span @click="navigateTo('qrcode-login')">扫码登录</span>
+                  <span @click="alertNotAvailable">扫码登录</span>
                 </div>
               </div>
             </template>
@@ -61,7 +61,7 @@
                 <h2>验证码登录</h2>
                 <div class="login-options">
                   <span @click="navigateTo('login')">密码登录</span>
-                  <span @click="navigateTo('qrcode-login')">扫码登录</span>
+                  <span @click="alertNotAvailable">扫码登录</span>
                 </div>
               </div>
             </template>
@@ -69,7 +69,7 @@
               <div class="form-group">
                 <div class="input-container">
                   <i class="fa fa-phone"></i>
-                  <input type="text" v-model="account" placeholder="手机号/邮箱" class="input-field" />
+                  <input type="text" v-model="account" placeholder="邮箱" class="input-field" />
                 </div>
               </div>
               <div class="form-group captcha-group">
@@ -92,37 +92,7 @@
       </div>
     </div>
 
-    <!-- QrCodeLogin View -->
-    <div v-if="currentView === 'qrcode-login'">
-      <div class="auth-page" :style="authPageStyle('bg5')">
-        <AuthNavbar />
-        <div class="auth-content">
-          <AuthSlide :images="slideImages" />
-          <AuthForm>
-            <template #title>
-              <div class="title-container">
-                <h2>扫码登录</h2>
-                <img :src="accountIcon" alt="账号密码登录" class="account-icon" @click="navigateTo('login')" />
-              </div>
-            </template>
-            <template #fields>
-              <div class="qrcode-container">
-                <img :src="qrcode" alt="登录二维码" class="qrcode-img" />
-                <p>使用微信/支付宝扫码登录</p>
-              </div>
-              <div class="qrcode-tips">
-                <p>请使用微信/支付宝扫描左侧二维码登录</p>
-                <p>扫码后请在手机上确认登录</p>
-              </div>
-            </template>
-            <template #actions>
-              <button @click="navigateTo('login')">账号密码登录</button>
-            </template>
-          </AuthForm>
-        </div>
-        
-      </div>
-    </div>
+    <!-- QrCodeLogin View - REMOVED -->
 
     <!-- Register View -->
     <div v-if="currentView === 'register'">
@@ -166,13 +136,7 @@
             </template>
             <template #actions>
               <button @click="handleRegister" :disabled="!isRegisterFormValid">注册</button>
-              <div class="extra-options">
-                <label class="checkbox-label">
-                  <input type="checkbox" v-model="agreeTerms" />
-                  <span class="checkbox-custom"></span>
-                  <span>我已阅读并同意 <a href="#" @click.prevent="showTerms">用户协议</a> 和 <a href="#" @click.prevent="showPrivacy">隐私政策</a></span>
-                </label>
-              </div>
+              <!-- 移除了这里的 "extra-options" 和同意协议的复选框 -->
             </template>
           </AuthForm>
         </div>
@@ -197,7 +161,7 @@
               <div class="form-group">
                 <div class="input-container">
                   <i class="fa fa-phone"></i>
-                  <input type="text" v-model="account" placeholder="请输入手机号/邮箱" class="input-field" />
+                  <input type="text" v-model="account" placeholder="请输入邮箱" class="input-field" />
                 </div>
               </div>
               <div class="form-group captcha-group">
@@ -235,70 +199,16 @@
             <template #title>
               <div class="title-container">
                 <h2>找回密码</h2>
-                <span @click="navigateTo('login')">返回登录</span>
+                <span @click="navigateTo('login')" class="link-style">返回登录</span>
               </div>
             </template>
             <template #actions>
               <div class="reset-options">
-                <button @click="navigateTo('find-password-by-phone')">
-                  <i class="fa fa-phone"></i>
-                  <span>手机号找回</span>
-                </button>
                 <button @click="navigateTo('find-password-by-email')">
                   <i class="fa fa-envelope"></i>
                   <span>邮箱找回</span>
                 </button>
               </div>
-            </template>
-          </AuthForm>
-        </div>
-        
-      </div>
-    </div>
-
-    <!-- FindPasswordByPhone View -->
-    <div v-if="currentView === 'find-password-by-phone'">
-      <div class="auth-page" :style="authPageStyle('bg5')">
-        <AuthNavbar />
-        <div class="auth-content">
-          <AuthSlide :images="slideImages" />
-          <AuthForm>
-            <template #title>
-              <div class="title-container">
-                <h2>手机号找回密码</h2>
-                <span @click="navigateTo('find-password')">返回选择</span>
-              </div>
-            </template>
-            <template #fields>
-              <div class="form-group">
-                <div class="input-container">
-                  <i class="fa fa-phone"></i>
-                  <input type="text" v-model="phone" placeholder="请输入注册手机号" class="input-field" />
-                </div>
-              </div>
-              <div class="form-group captcha-group">
-                <input type="text" v-model="captchaInput" placeholder="请输入验证码" class="input-field captcha-input-field" />
-                <button :disabled="countdown > 0 || !phone" @click="getCaptcha" class="get-captcha-btn">
-                  {{ countdown > 0 ? `${countdown}秒后重试` : '获取验证码' }}
-                </button>
-              </div>
-              <div class="form-group">
-                <div class="input-container">
-                  <i class="fa fa-lock"></i>
-                  <input :type="newPasswordVisible ? 'text' : 'password'" v-model="newPassword" placeholder="请输入新密码" class="input-field" />
-                  <i class="fa" :class="newPasswordVisible ? 'fa-eye-slash' : 'fa-eye'" @click="toggleNewPasswordVisibility"></i>
-                </div>
-              </div>
-              <div class="form-group">
-                <div class="input-container">
-                  <i class="fa fa-lock"></i>
-                  <input :type="confirmNewPasswordVisible ? 'text' : 'password'" v-model="confirmNewPassword" placeholder="请确认新密码" class="input-field" />
-                  <i class="fa" :class="confirmNewPasswordVisible ? 'fa-eye-slash' : 'fa-eye'" @click="toggleConfirmNewPasswordVisibility"></i>
-                </div>
-              </div>
-            </template>
-            <template #actions>
-              <button @click="resetPasswordByPhone">确认重置</button>
             </template>
           </AuthForm>
         </div>
@@ -316,7 +226,7 @@
             <template #title>
               <div class="title-container">
                 <h2>邮箱找回密码</h2>
-                <span @click="navigateTo('find-password')">返回选择</span>
+                <span @click="navigateTo('find-password')" class="link-style">返回选择</span>
               </div>
             </template>
             <template #fields>
@@ -442,7 +352,7 @@ import AuthNavbar from '@/components/AuthNavbar.vue';
 import AuthForm from '@/components/AuthForm.vue';
 import AuthFooter from '@/components/AuthFooter.vue';
 import AuthSlide from '@/components/AuthSlide.vue'; // Assuming AuthSlide component exists
-import { sendVerificationCode } from '@/api/user.js';
+import { sendVerificationCode, verifyCode, login, register, resetPassword } from '@/api/user.js';
 
 // Importing images
 import bg1 from '@/assets/bg1.png';
@@ -468,6 +378,11 @@ export default {
       username: '',
       password: '',
       passwordVisible: false,
+      // 暂存注册数据
+      registrationData: {
+        username: '',
+        password: ''
+      },
       // 验证码相关数据
       captchaInput: '',
       generatedCaptchaText: '',
@@ -478,11 +393,10 @@ export default {
       account: '',
       agreeTerms: false,
       // 找回密码相关数据
-      phone: '',
       email: '',
       newPassword: '',
       newPasswordVisible: false,
-      confirmNewPassword: false,
+      confirmNewPassword: '',
       confirmNewPasswordVisible: false,
       // 倒计时相关
       countdown: 0,
@@ -523,21 +437,12 @@ export default {
         this.password &&
         this.confirmPassword &&
         this.password === this.confirmPassword &&
-        this.captchaInput &&
-        this.agreeTerms
+        this.captchaInput
+        // 移除了 this.agreeTerms 验证
       );
     },
     isBindAccountFormValid() {
       return this.account && this.captchaInput && this.agreeTerms;
-    },
-    isFindPasswordByPhoneFormValid() {
-      return (
-        this.phone &&
-        this.captchaInput &&
-        this.newPassword &&
-        this.confirmNewPassword &&
-        this.newPassword === this.confirmNewPassword
-      );
     },
     isFindPasswordByEmailFormValid() {
       return (
@@ -573,7 +478,6 @@ export default {
       this.confirmPasswordVisible = false;
       this.account = '';
       this.agreeTerms = false;
-      this.phone = '';
       this.email = '';
       this.newPassword = '';
       this.newPasswordVisible = false;
@@ -657,8 +561,6 @@ export default {
       // 确定目标账户和类型
       if (this.currentView === 'captcha-login' || this.currentView === 'bind-account') {
         targetAccount = this.account;
-      } else if (this.currentView === 'find-password-by-phone') {
-        targetAccount = this.phone;
       } else if (this.currentView === 'find-password-by-email') {
         targetAccount = this.email;
       }
@@ -718,52 +620,74 @@ export default {
       }
     },
     // 处理登录
-    handleLogin() {
-      if(this.validateCaptcha() && this.isLoginFormValid) {
+    async handleLogin() {
+      if (!this.validateCaptcha()) return;
+      if (!this.isLoginFormValid) {
+          alert('请输入用户名、密码和验证码。');
+          return;
+      }
+      try {
+        const response = await login(this.username, this.password);
+        const token = response.data.access_token;
+        localStorage.setItem('user-token', token);
         alert('登录成功!');
-        // 模拟登录成功，设置token
-        localStorage.setItem('user-token', 'your-secret-token');
         this.$router.push('/home');
+      } catch (error) {
+        const detail = error.response?.data?.detail || '登录失败，请检查您的凭据。';
+        alert(`登录失败: ${detail}`);
+        this.generateCaptcha(); // 刷新验证码
+        this.captchaInput = '';
       }
     },
     // 处理验证码登录
-    handleCaptchaLogin() {
-      if (this.account && this.captchaInput) {
+    async handleCaptchaLogin() {
+      try {
+        await verifyCode(this.account, this.captchaInput);
+        // 验证通过后，再执行登录逻辑
         alert('登录成功!');
-        // 模拟登录成功，设置token
         localStorage.setItem('user-token', 'your-secret-token');
         this.$router.push('/home');
-      } else {
-        alert('请输入账号和验证码');
+      } catch (error) {
+        const detail = error.response?.data?.detail || '验证失败，请重试。';
+        alert(detail);
       }
     },
     // 处理注册
     handleRegister() {
-      if (!this.agreeTerms) {
-        if (confirm("您必须同意用户协议和隐私政策才能注册。\n\n要为您自动勾选并继续吗？")) {
-          this.agreeTerms = true;
-        } else {
-          return; // 用户取消，停止注册流程
-        }
+      if (!this.isRegisterFormValid) {
+        alert('请确保所有字段都已正确填写，且两次输入的密码一致。');
+        return;
       }
 
       if(this.validateCaptcha()) {
+        // 暂存用户名和密码
+        this.registrationData.username = this.username;
+        this.registrationData.password = this.password;
         this.navigateTo('bind-account');
       }
     },
-    // 处理账号绑定
+    // 处理账号绑定 (现在是注册的最后一步)
     async handleBind() {
       if (!this.validateForm()) return;
       this.isLoading = true;
-      console.log('提交绑定请求:', { account: this.account, captcha: this.captchaInput });
-      // Simulating API call
-      setTimeout(() => {
-        // this.$message.success('账号绑定成功');
-        alert('账号绑定成功，将跳转到主页');
-        localStorage.setItem('user-token', 'your-secret-token');
-        this.$router.push('/home');
+
+      try {
+        // 步骤1：验证邮箱验证码
+        await verifyCode(this.account, this.captchaInput);
+
+        // 步骤2：验证码通过后，提交注册信息
+        // 从暂存数据中获取用户名和密码
+        const response = await register(this.registrationData.username, this.registrationData.password, this.account);
+        
+        alert(`${response.data.message}！现在可以用新账号登录了。`);
+        this.navigateTo('login'); // 跳转到登录页面
+
+      } catch (error) {
+        const detail = error.response?.data?.detail || '操作失败，请重试。';
+        alert(`注册失败: ${detail}`);
+      } finally {
         this.isLoading = false;
-      }, 1000);
+      }
     },
     // 表单验证
     validateForm() {
@@ -789,23 +713,24 @@ export default {
     showPrivacy() {
       this.showPrivacyModal = true;
     },
-    // 手机号找回密码
-    resetPasswordByPhone() {
-      if (!this.isFindPasswordByPhoneFormValid) {
-        console.error('请完善并验证表单信息');
-        return;
-      }
-      console.log('重置密码:', { phone: this.phone, captcha: this.captchaInput, newPassword: this.newPassword });
-      this.navigateTo('login');
-    },
     // 邮箱找回密码
-    resetPasswordByEmail() {
+    async resetPasswordByEmail() {
       if (!this.isFindPasswordByEmailFormValid) {
-        console.error('请完善并验证表单信息');
+        alert('请确保所有字段都已正确填写，且两次输入的新密码一致。');
         return;
       }
-      console.log('重置密码:', { email: this.email, captcha: this.captchaInput, newPassword: this.newPassword });
-      this.navigateTo('login');
+      try {
+        // 调用后端的重置密码接口
+        const response = await resetPassword(this.email, this.captchaInput, this.newPassword);
+        alert(response.data.message || '密码重置成功！');
+        this.navigateTo('login');
+      } catch(error) {
+        const detail = error.response?.data?.detail || '操作失败，请重试。';
+        alert(`密码重置失败: ${detail}`);
+      }
+    },
+    alertNotAvailable() {
+      alert('该功能暂未开放');
     },
     // 设置认证页面的背景样式
     authPageStyle(bgName) {
@@ -824,7 +749,7 @@ export default {
   watch: {
     // 当视图切换时，重新生成验证码
     currentView(newView) {
-      if (newView === 'login' || newView === 'register' || newView === 'find-password') {
+      if (newView === 'login' || newView === 'register') { // 从这里移除了 'find-password'
         this.$nextTick(() => {
           this.generateCaptcha();
         });
