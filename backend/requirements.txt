@@ -4,4 +4,7 @@ pydantic[email]
 python-multipart
 sqlalchemy
 cryptography
-loguru 
+loguru
+PyMySQL
+python-jose[cryptography]
+passlib[bcrypt] 
