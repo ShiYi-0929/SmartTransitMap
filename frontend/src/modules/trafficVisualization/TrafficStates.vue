@@ -4,7 +4,7 @@
     <el-button @click="loadStats">刷新</el-button>
     <div v-if="stats && Object.keys(stats).length">
       <div v-for="(value, key) in stats" :key="key">
-        {{ key }}: {{ value }}
+        {{ key }}：{{ value }}
       </div>
     </div>
     <pre>{{ stats }}</pre>

@@ -19,20 +19,43 @@
             <template #fields>
               <div class="form-group">
                 <div class="input-container">
-                  <i class="fa fa-user"></i>
-                  <input type="text" v-model="username" placeholder="用户名" class="input-field" />
+                  <i class="fa fa-id-card"></i>
+                  <input
+                    type="text"
+                    v-model="loginUserID"
+                    placeholder="用户ID"
+                    class="input-field"
+                  />
                 </div>
               </div>
               <div class="form-group">
                 <div class="input-container">
                   <i class="fa fa-lock"></i>
-                  <input :type="passwordVisible ? 'text' : 'password'" v-model="password" placeholder="密码" class="input-field" />
-                  <i class="fa" :class="passwordVisible ? 'fa-eye-slash' : 'fa-eye'" @click="togglePasswordVisibility"></i>
+                  <input
+                    :type="passwordVisible ? 'text' : 'password'"
+                    v-model="password"
+                    placeholder="密码"
+                    class="input-field"
+                  />
+                  <i
+                    class="fa"
+                    :class="passwordVisible ? 'fa-eye-slash' : 'fa-eye'"
+                    @click="togglePasswordVisibility"
+                  ></i>
                 </div>
               </div>
               <div class="form-group captcha-group">
-                <canvas ref="captchaCanvas" @click="generateCaptcha" class="captcha-canvas"></canvas>
-                <input type="text" v-model="captchaInput" placeholder="请输入验证码" class="input-field captcha-input-field" />
+                <canvas
+                  ref="captchaCanvas"
+                  @click="generateCaptcha"
+                  class="captcha-canvas"
+                ></canvas>
+                <input
+                  type="text"
+                  v-model="captchaInput"
+                  placeholder="请输入验证码"
+                  class="input-field captcha-input-field"
+                />
                 <a href="#" @click.prevent="generateCaptcha">看不清？换一张</a>
               </div>
             </template>
@@ -45,7 +68,6 @@
             </template>
           </AuthForm>
         </div>
-        
       </div>
     </div>
 
@@ -69,18 +91,34 @@
               <div class="form-group">
                 <div class="input-container">
                   <i class="fa fa-phone"></i>
-                  <input type="text" v-model="account" placeholder="邮箱" class="input-field" />
+                  <input
+                    type="text"
+                    v-model="account"
+                    placeholder="邮箱"
+                    class="input-field"
+                  />
                 </div>
               </div>
               <div class="form-group captcha-group">
-                <input type="text" v-model="captchaInput" placeholder="请输入验证码" class="input-field captcha-input-field" />
-                <button :disabled="countdown > 0 || !account" @click="getCaptcha" class="get-captcha-btn">
-                  {{ countdown > 0 ? `${countdown}秒后重试` : '获取验证码' }}
+                <input
+                  type="text"
+                  v-model="captchaInput"
+                  placeholder="请输入验证码"
+                  class="input-field captcha-input-field"
+                />
+                <button
+                  :disabled="countdown > 0 || !account"
+                  @click="getCaptcha"
+                  class="get-captcha-btn"
+                >
+                  {{ countdown > 0 ? `${countdown}秒后重试` : "获取验证码" }}
                 </button>
               </div>
             </template>
             <template #actions>
-              <button @click="handleCaptchaLogin" :disabled="!account || !captchaInput">登录</button>
+              <button @click="handleCaptchaLogin" :disabled="!account || !captchaInput">
+                登录
+              </button>
               <div class="extra-options">
                 <a href="#" @click.prevent="navigateTo('find-password')">忘记密码？</a>
                 <a href="#" @click.prevent="navigateTo('register')">立即注册</a>
@@ -88,7 +126,6 @@
             </template>
           </AuthForm>
         </div>
-        
       </div>
     </div>
 
@@ -104,43 +141,76 @@
             <template #title>
               <div class="title-container">
                 <h2>新用户注册</h2>
-                <span @click="navigateTo('login')" class="link-style">已有账号？立即登录</span>
+                <span @click="navigateTo('login')" class="link-style"
+                  >已有账号？立即登录</span
+                >
               </div>
             </template>
             <template #fields>
               <div class="form-group">
                 <div class="input-container">
                   <i class="fa fa-user"></i>
-                  <input type="text" v-model="username" placeholder="用户名" class="input-field" />
+                  <input
+                    type="text"
+                    v-model="username"
+                    placeholder="用户名"
+                    class="input-field"
+                  />
                 </div>
               </div>
               <div class="form-group">
                 <div class="input-container">
                   <i class="fa fa-lock"></i>
-                  <input :type="passwordVisible ? 'text' : 'password'" v-model="password" placeholder="密码" class="input-field" />
-                  <i class="fa" :class="passwordVisible ? 'fa-eye-slash' : 'fa-eye'" @click="togglePasswordVisibility"></i>
+                  <input
+                    :type="passwordVisible ? 'text' : 'password'"
+                    v-model="password"
+                    placeholder="密码"
+                    class="input-field"
+                  />
+                  <i
+                    class="fa"
+                    :class="passwordVisible ? 'fa-eye-slash' : 'fa-eye'"
+                    @click="togglePasswordVisibility"
+                  ></i>
                 </div>
               </div>
               <div class="form-group">
                 <div class="input-container">
                   <i class="fa fa-lock"></i>
-                  <input :type="confirmPasswordVisible ? 'text' : 'password'" v-model="confirmPassword" placeholder="确认密码" class="input-field" />
-                  <i class="fa" :class="confirmPasswordVisible ? 'fa-eye-slash' : 'fa-eye'" @click="toggleConfirmPasswordVisibility"></i>
+                  <input
+                    :type="confirmPasswordVisible ? 'text' : 'password'"
+                    v-model="confirmPassword"
+                    placeholder="确认密码"
+                    class="input-field"
+                  />
+                  <i
+                    class="fa"
+                    :class="confirmPasswordVisible ? 'fa-eye-slash' : 'fa-eye'"
+                    @click="toggleConfirmPasswordVisibility"
+                  ></i>
                 </div>
               </div>
               <div class="form-group captcha-group">
-                <canvas ref="captchaCanvas" @click="generateCaptcha" class="captcha-canvas"></canvas>
-                <input type="text" v-model="captchaInput" placeholder="请输入验证码" class="input-field captcha-input-field" />
+                <canvas
+                  ref="captchaCanvas"
+                  @click="generateCaptcha"
+                  class="captcha-canvas"
+                ></canvas>
+                <input
+                  type="text"
+                  v-model="captchaInput"
+                  placeholder="请输入验证码"
+                  class="input-field captcha-input-field"
+                />
                 <a href="#" @click.prevent="generateCaptcha">看不清？换一张</a>
               </div>
             </template>
             <template #actions>
-              <button @click="handleRegister" :disabled="!isRegisterFormValid">注册</button>
+              <button @click="handleRegister">注册</button>
               <!-- 移除了这里的 "extra-options" 和同意协议的复选框 -->
             </template>
           </AuthForm>
         </div>
-        
       </div>
     </div>
 
@@ -161,31 +231,47 @@
               <div class="form-group">
                 <div class="input-container">
                   <i class="fa fa-phone"></i>
-                  <input type="text" v-model="account" placeholder="请输入邮箱" class="input-field" />
+                  <input
+                    type="text"
+                    v-model="account"
+                    placeholder="请输入邮箱"
+                    class="input-field"
+                  />
                 </div>
               </div>
               <div class="form-group captcha-group">
-                <input type="text" v-model="captchaInput" placeholder="请输入验证码" class="input-field captcha-input-field" />
-                <button :disabled="countdown > 0 || !account" @click="getCaptcha" class="get-captcha-btn">
-                  {{ countdown > 0 ? `${countdown}秒后重试` : '获取验证码' }}
+                <input
+                  type="text"
+                  v-model="captchaInput"
+                  placeholder="请输入验证码"
+                  class="input-field captcha-input-field"
+                />
+                <button
+                  :disabled="countdown > 0 || !account"
+                  @click="getCaptcha"
+                  class="get-captcha-btn"
+                >
+                  {{ countdown > 0 ? `${countdown}秒后重试` : "获取验证码" }}
                 </button>
               </div>
             </template>
             <template #actions>
               <button @click="handleBind" :disabled="isLoading">
-                {{ isLoading ? '绑定中...' : '立即绑定' }}
+                {{ isLoading ? "绑定中..." : "立即绑定" }}
               </button>
               <div class="extra-options">
                 <label class="checkbox-label">
                   <input type="checkbox" v-model="agreeTerms" />
                   <span class="checkbox-custom"></span>
-                  <span>我已阅读并同意 <a href="#" @click.prevent="showTerms">用户协议</a> 和 <a href="#" @click.prevent="showPrivacy">隐私政策</a></span>
+                  <span
+                    >我已阅读并同意 <a href="#" @click.prevent="showTerms">用户协议</a> 和
+                    <a href="#" @click.prevent="showPrivacy">隐私政策</a></span
+                  >
                 </label>
               </div>
             </template>
           </AuthForm>
         </div>
-        
       </div>
     </div>
 
@@ -212,7 +298,6 @@
             </template>
           </AuthForm>
         </div>
-        
       </div>
     </div>
 
@@ -226,34 +311,68 @@
             <template #title>
               <div class="title-container">
                 <h2>邮箱找回密码</h2>
-                <span @click="navigateTo('find-password')" class="link-style">返回选择</span>
+                <span @click="navigateTo('find-password')" class="link-style"
+                  >返回选择</span
+                >
               </div>
             </template>
             <template #fields>
               <div class="form-group">
                 <div class="input-container">
                   <i class="fa fa-envelope"></i>
-                  <input type="text" v-model="email" placeholder="请输入注册邮箱" class="input-field" />
+                  <input
+                    type="text"
+                    v-model="email"
+                    placeholder="请输入注册邮箱"
+                    class="input-field"
+                  />
                 </div>
               </div>
               <div class="form-group captcha-group">
-                <input type="text" v-model="captchaInput" placeholder="请输入验证码" class="input-field captcha-input-field" />
-                <button :disabled="countdown > 0 || !email" @click="getCaptcha" class="get-captcha-btn">
-                  {{ countdown > 0 ? `${countdown}秒后重试` : '获取验证码' }}
+                <input
+                  type="text"
+                  v-model="captchaInput"
+                  placeholder="请输入验证码"
+                  class="input-field captcha-input-field"
+                />
+                <button
+                  :disabled="countdown > 0 || !email"
+                  @click="getCaptcha"
+                  class="get-captcha-btn"
+                >
+                  {{ countdown > 0 ? `${countdown}秒后重试` : "获取验证码" }}
                 </button>
               </div>
               <div class="form-group">
                 <div class="input-container">
                   <i class="fa fa-lock"></i>
-                  <input :type="newPasswordVisible ? 'text' : 'password'" v-model="newPassword" placeholder="请输入新密码" class="input-field" />
-                  <i class="fa" :class="newPasswordVisible ? 'fa-eye-slash' : 'fa-eye'" @click="toggleNewPasswordVisibility"></i>
+                  <input
+                    :type="newPasswordVisible ? 'text' : 'password'"
+                    v-model="newPassword"
+                    placeholder="请输入新密码"
+                    class="input-field"
+                  />
+                  <i
+                    class="fa"
+                    :class="newPasswordVisible ? 'fa-eye-slash' : 'fa-eye'"
+                    @click="toggleNewPasswordVisibility"
+                  ></i>
                 </div>
               </div>
               <div class="form-group">
                 <div class="input-container">
                   <i class="fa fa-lock"></i>
-                  <input :type="confirmNewPasswordVisible ? 'text' : 'password'" v-model="confirmNewPassword" placeholder="请确认新密码" class="input-field" />
-                  <i class="fa" :class="confirmNewPasswordVisible ? 'fa-eye-slash' : 'fa-eye'" @click="toggleConfirmNewPasswordVisibility"></i>
+                  <input
+                    :type="confirmNewPasswordVisible ? 'text' : 'password'"
+                    v-model="confirmNewPassword"
+                    placeholder="请确认新密码"
+                    class="input-field"
+                  />
+                  <i
+                    class="fa"
+                    :class="confirmNewPasswordVisible ? 'fa-eye-slash' : 'fa-eye'"
+                    @click="toggleConfirmNewPasswordVisibility"
+                  ></i>
                 </div>
               </div>
             </template>
@@ -262,7 +381,6 @@
             </template>
           </AuthForm>
         </div>
-        
       </div>
     </div>
 
@@ -276,21 +394,37 @@
         <div class="modal-body">
           <div class="terms-content">
             <h4>1. 服务条款的接受</h4>
-            <p>当您使用本网站服务时，即表示您同意接受本服务条款的所有条款和条件。如果您不同意本服务条款的任何部分，请勿使用本网站服务。</p>
+            <p>
+              当您使用本网站服务时，即表示您同意接受本服务条款的所有条款和条件。如果您不同意本服务条款的任何部分，请勿使用本网站服务。
+            </p>
             <h4>2. 服务说明</h4>
-            <p>本网站通过互联网向用户提供各种服务，包括但不限于信息发布、在线交流、电子商务等。本网站保留随时更改或中断服务而不需通知用户的权利。本网站不保证服务不会中断，对服务的及时性、安全性、准确性也不作担保。</p>
+            <p>
+              本网站通过互联网向用户提供各种服务，包括但不限于信息发布、在线交流、电子商务等。本网站保留随时更改或中断服务而不需通知用户的权利。本网站不保证服务不会中断，对服务的及时性、安全性、准确性也不作担保。
+            </p>
             <h4>3. 用户行为</h4>
-            <p>用户在使用本网站服务时必须遵守中华人民共和国的相关法律法规，不得利用本网站服务进行任何违法或不当的行为，包括但不限于：发布虚假信息、侵犯他人知识产权、传播淫秽色情内容、进行诈骗活动等。</p>
+            <p>
+              用户在使用本网站服务时必须遵守中华人民共和国的相关法律法规，不得利用本网站服务进行任何违法或不当的行为，包括但不限于：发布虚假信息、侵犯他人知识产权、传播淫秽色情内容、进行诈骗活动等。
+            </p>
             <h4>4. 隐私政策</h4>
-            <p>本网站尊重用户的隐私，将按照本网站的隐私政策收集、使用和保护用户的个人信息。用户在使用本网站服务时，即表示同意本网站按照本隐私政策收集、使用和保护您的个人信息。</p>
+            <p>
+              本网站尊重用户的隐私，将按照本网站的隐私政策收集、使用和保护用户的个人信息。用户在使用本网站服务时，即表示同意本网站按照本隐私政策收集、使用和保护您的个人信息。
+            </p>
             <h4>5. 免责声明</h4>
-            <p>本网站对因不可抗力、黑客攻击、系统故障等原因导致的服务中断或用户损失不承担责任。本网站对用户发布的内容的真实性、准确性、合法性不承担任何责任。用户对自己在本网站上的行为承担全部法律责任。</p>
+            <p>
+              本网站对因不可抗力、黑客攻击、系统故障等原因导致的服务中断或用户损失不承担责任。本网站对用户发布的内容的真实性、准确性、合法性不承担任何责任。用户对自己在本网站上的行为承担全部法律责任。
+            </p>
             <h4>6. 版权声明</h4>
-            <p>本网站上的所有内容，包括但不限于文字、图片、音频、视频等，均受版权保护。未经本网站书面许可，任何单位或个人不得复制、传播、修改本网站上的任何内容。</p>
+            <p>
+              本网站上的所有内容，包括但不限于文字、图片、音频、视频等，均受版权保护。未经本网站书面许可，任何单位或个人不得复制、传播、修改本网站上的任何内容。
+            </p>
             <h4>7. 服务条款的修改</h4>
-            <p>本网站有权随时修改本服务条款，并在本网站上公布。用户在使用本网站服务时，应随时关注本服务条款的修改情况。如果用户继续使用本网站服务，即表示同意接受修改后的服务条款。</p>
+            <p>
+              本网站有权随时修改本服务条款，并在本网站上公布。用户在使用本网站服务时，应随时关注本服务条款的修改情况。如果用户继续使用本网站服务，即表示同意接受修改后的服务条款。
+            </p>
             <h4>8. 法律适用和管辖</h4>
-            <p>本服务条款的解释、适用和争议的解决均适用中华人民共和国的法律。如发生争议，双方应协商解决；协商不成的，任何一方均有权向本网站所在地的人民法院提起诉讼。</p>
+            <p>
+              本服务条款的解释、适用和争议的解决均适用中华人民共和国的法律。如发生争议，双方应协商解决；协商不成的，任何一方均有权向本网站所在地的人民法院提起诉讼。
+            </p>
           </div>
         </div>
         <div class="modal-footer">
@@ -309,10 +443,15 @@
         <div class="modal-body">
           <div class="privacy-content">
             <h4>1. 引言</h4>
-            <p>本网站尊重并保护所有使用服务用户的个人隐私权。为了给您提供更准确、更有个性化的服务，本网站会按照本隐私政策的规定收集、使用和保护您的个人信息。请在使用本网站服务前仔细阅读本隐私政策，特别是关于我们收集哪些信息、如何使用这些信息、向谁披露这些信息以及您对这些信息享有哪些权利的条款。如果您不同意本隐私政策的任何内容，您应立即停止使用本网站服务。当您使用本网站的服务时，即表示您同意我们按照本隐私政策规定收集、使用、存储和披露您的个人信息。</p>
+            <p>
+              本网站尊重并保护所有使用服务用户的个人隐私权。为了给您提供更准确、更有个性化的服务，本网站会按照本隐私政策的规定收集、使用和保护您的个人信息。请在使用本网站服务前仔细阅读本隐私政策，特别是关于我们收集哪些信息、如何使用这些信息、向谁披露这些信息以及您对这些信息享有哪些权利的条款。如果您不同意本隐私政策的任何内容，您应立即停止使用本网站服务。当您使用本网站的服务时，即表示您同意我们按照本隐私政策规定收集、使用、存储和披露您的个人信息。
+            </p>
             <h4>2. 适用范围</h4>
             <p>(a) 在您注册本网站账号时，您根据本网站要求提供的个人注册信息；</p>
-            <p>(b) 在您使用本网站网络服务，或访问本网站平台网页时，本网站自动接收并记录的您的浏览器和计算机上的信息，包括但不限于您的IP地址、浏览器的类型、使用的语言、访问日期和时间、软硬件特征信息及您需求的网页记录等数据；</p>
+            <p>
+              (b)
+              在您使用本网站网络服务，或访问本网站平台网页时，本网站自动接收并记录的您的浏览器和计算机上的信息，包括但不限于您的IP地址、浏览器的类型、使用的语言、访问日期和时间、软硬件特征信息及您需求的网页记录等数据；
+            </p>
             <p>(c) 本网站通过合法途径从商业伙伴处取得的用户个人数据。</p>
             <h4>3. 信息收集和使用</h4>
             <p>本网站收集您的个人信息的主要目的是为您提供个性化的服务，包括但不限于：</p>
@@ -327,16 +466,29 @@
             <p>(a) 获得您的明确授权；</p>
             <p>(b) 根据法律、法规、司法程序或政府主管部门的强制性要求；</p>
             <p>(c) 在紧急情况下，为维护本网站、本网站用户或公众的合法权益；</p>
-            <p>(d) 与本网站的关联公司、合作伙伴或服务提供商分享，以提供您所请求的服务；</p>
-            <p>(e) 在本网站发生合并、收购、重组、破产清算等情况时，如涉及到个人信息的转让，我们会要求新的持有您个人信息的公司、组织继续受本隐私政策的约束，否则我们将要求该公司、组织重新向您征求授权同意。</p>
+            <p>
+              (d) 与本网站的关联公司、合作伙伴或服务提供商分享，以提供您所请求的服务；
+            </p>
+            <p>
+              (e)
+              在本网站发生合并、收购、重组、破产清算等情况时，如涉及到个人信息的转让，我们会要求新的持有您个人信息的公司、组织继续受本隐私政策的约束，否则我们将要求该公司、组织重新向您征求授权同意。
+            </p>
             <h4>5. 信息存储和保护</h4>
-            <p>本网站采用行业标准的安全技术和程序来保护您的个人信息不被未经授权的访问、使用或泄露。然而，请注意，没有任何一种互联网传输方式或电子存储方式是100%安全的，因此我们不能保证您的个人信息绝对安全。如果发生信息安全事件，我们将按照相关法律法规的要求及时通知您并采取相应的措施。</p>
+            <p>
+              本网站采用行业标准的安全技术和程序来保护您的个人信息不被未经授权的访问、使用或泄露。然而，请注意，没有任何一种互联网传输方式或电子存储方式是100%安全的，因此我们不能保证您的个人信息绝对安全。如果发生信息安全事件，我们将按照相关法律法规的要求及时通知您并采取相应的措施。
+            </p>
             <h4>6. 用户权利</h4>
-            <p>您有权访问、更正和删除您的个人信息，以及限制或反对某些个人信息处理活动。您也有权撤回您之前给予的同意。如果您需要行使这些权利，请通过本网站提供的联系方式与我们联系。我们将在合理的时间内响应您的请求。</p>
+            <p>
+              您有权访问、更正和删除您的个人信息，以及限制或反对某些个人信息处理活动。您也有权撤回您之前给予的同意。如果您需要行使这些权利，请通过本网站提供的联系方式与我们联系。我们将在合理的时间内响应您的请求。
+            </p>
             <h4>7. 隐私政策的更新</h4>
-            <p>本网站可能会不时更新本隐私政策。当我们对隐私政策进行重大变更时，我们将通过在本网站上发布新的隐私政策或其他适当的方式通知您。请定期查看本隐私政策，以了解我们如何收集、使用和保护您的信息。您继续使用本网站服务即表示您同意接受更新后的隐私政策的约束。</p>
+            <p>
+              本网站可能会不时更新本隐私政策。当我们对隐私政策进行重大变更时，我们将通过在本网站上发布新的隐私政策或其他适当的方式通知您。请定期查看本隐私政策，以了解我们如何收集、使用和保护您的信息。您继续使用本网站服务即表示您同意接受更新后的隐私政策的约束。
+            </p>
             <h4>8. 联系我们</h4>
-            <p>如果您对本隐私政策有任何疑问、意见或建议，请通过本网站提供的联系方式与我们联系。我们将尽快回复您的咨询。</p>
+            <p>
+              如果您对本隐私政策有任何疑问、意见或建议，请通过本网站提供的联系方式与我们联系。我们将尽快回复您的咨询。
+            </p>
           </div>
         </div>
         <div class="modal-footer">
@@ -348,55 +500,64 @@
 </template>
 
 <script>
-import AuthNavbar from '@/components/AuthNavbar.vue';
-import AuthForm from '@/components/AuthForm.vue';
-import AuthFooter from '@/components/AuthFooter.vue';
-import AuthSlide from '@/components/AuthSlide.vue'; // Assuming AuthSlide component exists
-import { sendVerificationCode, verifyCode, login, register, resetPassword } from '@/api/user.js';
+import { ElNotification } from 'element-plus';
+import AuthNavbar from "@/components/AuthNavbar.vue";
+import AuthForm from "@/components/AuthForm.vue";
+import AuthFooter from "@/components/AuthFooter.vue";
+import AuthSlide from "@/components/AuthSlide.vue"; // Assuming AuthSlide component exists
+import {
+  sendVerificationCode,
+  verifyCode,
+  login,
+  register,
+  resetPassword,
+  getUserProfile,
+} from "@/api/user.js";
 
 // Importing images
-import bg1 from '@/assets/bg1.png';
-import bg2 from '@/assets/bg2.png';
-import bg3 from '@/assets/bg3.png';
-import bg4 from '@/assets/bg4.png';
-import bg5 from '@/assets/bg5.png';
-import accountIcon from '@/assets/account-icon.png';
-import qrcode from '@/assets/qrcode-icon.png'; // Assuming this is the correct qrcode image
+import bg1 from "@/assets/bg1.png";
+import bg2 from "@/assets/bg2.png";
+import bg3 from "@/assets/bg3.png";
+import bg4 from "@/assets/bg4.png";
+import bg5 from "@/assets/bg5.png";
+import accountIcon from "@/assets/account-icon.png";
+import qrcode from "@/assets/qrcode-icon.png"; // Assuming this is the correct qrcode image
 
 export default {
   components: {
     AuthNavbar,
     AuthForm,
     AuthFooter,
-    AuthSlide
+    AuthSlide,
   },
   data() {
     return {
       // 当前显示的视图
-      currentView: 'login',
+      currentView: "login",
       // 登录相关数据
-      username: '',
-      password: '',
+      username: "",
+      loginUserID: "",
+      password: "",
       passwordVisible: false,
       // 暂存注册数据
       registrationData: {
-        username: '',
-        password: ''
+        username: "",
+        password: "",
       },
       // 验证码相关数据
-      captchaInput: '',
-      generatedCaptchaText: '',
+      captchaInput: "",
+      generatedCaptchaText: "",
       // 注册相关数据
-      confirmPassword: '',
+      confirmPassword: "",
       confirmPasswordVisible: false,
       // 绑定账号相关数据
-      account: '',
+      account: "",
       agreeTerms: false,
       // 找回密码相关数据
-      email: '',
-      newPassword: '',
+      email: "",
+      newPassword: "",
       newPasswordVisible: false,
-      confirmNewPassword: '',
+      confirmNewPassword: "",
       confirmNewPasswordVisible: false,
       // 倒计时相关
       countdown: 0,
@@ -408,12 +569,7 @@ export default {
       accountIcon: accountIcon,
       qrcode: qrcode,
       // 轮播图图片
-      slideImages: [
-        bg1,
-        bg2,
-        bg3,
-        bg4
-      ],
+      slideImages: [bg1, bg2, bg3, bg4],
       backgroundImages: {
         bg1: bg1,
         bg2: bg2,
@@ -422,14 +578,14 @@ export default {
         bg5: bg5,
         bg6: bg1, // default
         bg7: bg2, // default
-        bg8: bg3  // default
-      }
+        bg8: bg3, // default
+      },
     };
   },
   computed: {
     // 表单验证相关计算属性
     isLoginFormValid() {
-      return this.username && this.password && this.captchaInput;
+      return this.loginUserID && this.password && this.captchaInput;
     },
     isRegisterFormValid() {
       return (
@@ -452,7 +608,7 @@ export default {
         this.confirmNewPassword &&
         this.newPassword === this.confirmNewPassword
       );
-    }
+    },
   },
   methods: {
     // 导航到指定视图
@@ -461,7 +617,7 @@ export default {
       // 重置表单数据
       this.resetFormData();
       // 如果是登录或注册视图，生成验证码
-      if (view === 'login' || view === 'register') {
+      if (view === "login" || view === "register") {
         this.$nextTick(() => {
           this.generateCaptcha();
         });
@@ -469,19 +625,19 @@ export default {
     },
     // 重置表单数据
     resetFormData() {
-      this.username = '';
-      this.password = '';
+      this.username = "";
+      this.password = "";
       this.passwordVisible = false;
-      this.captchaInput = '';
-      this.generatedCaptchaText = '';
-      this.confirmPassword = '';
+      this.captchaInput = "";
+      this.generatedCaptchaText = "";
+      this.confirmPassword = "";
       this.confirmPasswordVisible = false;
-      this.account = '';
+      this.account = "";
       this.agreeTerms = false;
-      this.email = '';
-      this.newPassword = '';
+      this.email = "";
+      this.newPassword = "";
       this.newPasswordVisible = false;
-      this.confirmNewPassword = '';
+      this.confirmNewPassword = "";
       this.confirmNewPasswordVisible = false;
       this.countdown = 0;
       this.isLoading = false;
@@ -496,9 +652,9 @@ export default {
       // Set canvas resolution to match its display size to avoid distortion
       canvas.width = canvas.offsetWidth;
       canvas.height = canvas.offsetHeight;
-      const ctx = canvas.getContext('2d');
-      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-      let captchaText = '';
+      const ctx = canvas.getContext("2d");
+      const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+      let captchaText = "";
       for (let i = 0; i < 4; i++) {
         captchaText += chars.charAt(Math.floor(Math.random() * chars.length));
       }
@@ -506,24 +662,33 @@ export default {
 
       // Clear and draw background
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#f0f0f0';
+      ctx.fillStyle = "#f0f0f0";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Draw text
-      ctx.font = 'bold 28px Arial'; // Adjusted font size for better fit
-      ctx.fillStyle = '#333';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
+      ctx.font = "bold 28px Arial"; // Adjusted font size for better fit
+      ctx.fillStyle = "#333";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
       ctx.fillText(captchaText, canvas.width / 2, canvas.height / 2 + 2); // Adjust vertical alignment
 
       // Add more and longer noise lines
-      for (let i = 0; i < 8; i++) { // Increased from 3 to 8 lines
-        ctx.strokeStyle = `rgb(${Math.random()*200},${Math.random()*200},${Math.random()*200})`;
+      for (let i = 0; i < 8; i++) {
+        // Increased from 3 to 8 lines
+        ctx.strokeStyle = `rgb(${Math.random() * 200},${Math.random() * 200},${
+          Math.random() * 200
+        })`;
         ctx.lineWidth = Math.random() * 1.5;
         ctx.beginPath();
         // Allow lines to start and end slightly off-canvas to appear longer
-        ctx.moveTo(Math.random() * canvas.width * 1.4 - canvas.width * 0.2, Math.random() * canvas.height);
-        ctx.lineTo(Math.random() * canvas.width * 1.4 - canvas.width * 0.2, Math.random() * canvas.height);
+        ctx.moveTo(
+          Math.random() * canvas.width * 1.4 - canvas.width * 0.2,
+          Math.random() * canvas.height
+        );
+        ctx.lineTo(
+          Math.random() * canvas.width * 1.4 - canvas.width * 0.2,
+          Math.random() * canvas.height
+        );
         ctx.stroke();
       }
     },
@@ -542,29 +707,30 @@ export default {
     },
     // 验证验证码
     validateCaptcha() {
-      if (this.captchaInput.toLowerCase() !== this.generatedCaptchaText.toLowerCase()) {
-        alert('验证码不正确!');
+      if (this.captchaInput !== this.generatedCaptchaText) {
+        ElNotification({ title: '错误', message: '验证码不正确!', type: 'error' });
         this.generateCaptcha();
-        this.captchaInput = '';
+        this.captchaInput = "";
         return false;
       }
       return true;
     },
     // 获取验证码（短信/邮件）
-    async getCaptcha() { // 标记为异步函数
+    async getCaptcha() {
+      // 标记为异步函数
       if (this.countdown > 0) return;
 
       let isValid = false;
-      let targetAccount = '';
+      let targetAccount = "";
       let isEmail = false;
 
       // 确定目标账户和类型
-      if (this.currentView === 'captcha-login' || this.currentView === 'bind-account') {
+      if (this.currentView === "captcha-login" || this.currentView === "bind-account") {
         targetAccount = this.account;
-      } else if (this.currentView === 'find-password-by-email') {
+      } else if (this.currentView === "find-password-by-email") {
         targetAccount = this.email;
       }
-      
+
       // 验证格式
       const phoneRegex = /^1[3-9]\d{9}$/;
       const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
@@ -574,13 +740,13 @@ export default {
         isValid = true;
       } else if (phoneRegex.test(targetAccount)) {
         // 在这里可以添加发送短信验证码的逻辑 (如果需要)
-        alert('短信功能暂未实现，请输入邮箱获取验证码。');
+        ElNotification({ title: '提示', message: '短信功能暂未实现，请输入邮箱获取验证码。', type: 'info' });
         return;
       } else {
-        alert('请输入正确的手机号或邮箱');
+        ElNotification({ title: '错误', message: '请输入正确的手机号或邮箱', type: 'error' });
         return;
       }
-      
+
       if (!isValid) return;
 
       // 如果是邮箱，调用后端API
@@ -588,19 +754,18 @@ export default {
         try {
           // 调用API发送邮件
           const response = await sendVerificationCode(targetAccount);
-          alert(response.data.message || '验证码已发送，请查收。');
-          
+          ElNotification({ title: '成功', message: response.data.message || "验证码已发送，请查收。", type: 'success' });
+
           // 开始倒计时
           this.countdown = 60;
           const timer = setInterval(() => {
             this.countdown--;
             if (this.countdown <= 0) clearInterval(timer);
           }, 1000);
-
         } catch (error) {
-          console.error('发送验证码失败:', error);
-          const detail = error.response?.data?.detail || '发送失败，请稍后重试。';
-          alert(`发送验证码失败: ${detail}`);
+          console.error("发送验证码失败:", error);
+          const detail = error.response?.data?.detail || "发送失败，请稍后重试。";
+          ElNotification({ title: '错误', message: `发送验证码失败: ${detail}`, type: 'error' });
           return; // 发送失败，不开始倒计时
         }
       }
@@ -609,34 +774,53 @@ export default {
     validateAccount() {
       const phoneRegex = /^1[3-9]\d{9}$/;
       const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-      
+
       if (phoneRegex.test(this.account)) {
         return true;
       } else if (emailRegex.test(this.account)) {
         return true;
       } else {
-        alert('请输入正确的手机号或邮箱');
+        ElNotification({ title: '错误', message: '请输入正确的手机号或邮箱', type: 'error' });
         return false;
       }
     },
     // 处理登录
     async handleLogin() {
-      if (!this.validateCaptcha()) return;
-      if (!this.isLoginFormValid) {
-          alert('请输入用户名、密码和验证码。');
-          return;
+      if (!this.loginUserID || !this.password || !this.captchaInput) {
+        ElNotification({ title: '错误', message: 'ID、密码和验证码不能为空！', type: 'error' });
+        return;
+      }
+      if (this.captchaInput !== this.generatedCaptchaText) {
+        ElNotification({ title: '错误', message: '验证码错误！', type: 'error' });
+        this.generateCaptcha(); // 刷新验证码
+        this.captchaInput = ""; // 清空输入
+        return;
       }
       try {
-        const response = await login(this.username, this.password);
-        const token = response.data.access_token;
-        localStorage.setItem('user-token', token);
-        alert('登录成功!');
-        this.$router.push('/home');
+        const response = await login(this.loginUserID, this.password);
+        if (response.access_token) {
+          const token = response.access_token;
+          localStorage.setItem("user-token", token);
+
+          // 登录成功后，立即获取用户信息并存储user_class
+          try {
+            const userProfileResponse = await getUserProfile();
+            if (userProfileResponse.user_class) {
+              localStorage.setItem("user-class", userProfileResponse.user_class);
+            }
+          } catch (profileError) {
+            console.error("登录后获取用户信息失败:", profileError);
+            ElNotification({ title: '错误', message: '获取用户信息失败，请稍后重试', type: 'error' });
+          }
+
+          ElNotification({ title: '成功', message: '登录成功!', type: 'success' });
+          this.$router.push("/home");
+        }
       } catch (error) {
-        const detail = error.response?.data?.detail || '登录失败，请检查您的凭据。';
-        alert(`登录失败: ${detail}`);
+        const detail = error.response?.data?.detail || "登录失败，请检查您的凭据。";
+        ElNotification({ title: '登录失败', message: detail, type: 'error' });
         this.generateCaptcha(); // 刷新验证码
-        this.captchaInput = '';
+        this.captchaInput = "";
       }
     },
     // 处理验证码登录
@@ -644,18 +828,47 @@ export default {
       try {
         await verifyCode(this.account, this.captchaInput);
         // 验证通过后，再执行登录逻辑
-        alert('登录成功!');
-        localStorage.setItem('user-token', 'your-secret-token');
-        this.$router.push('/home');
+        ElNotification({ title: '成功', message: '登录成功!', type: 'success' });
+        localStorage.setItem("user-token", "your-secret-token");
+        this.$router.push("/home");
       } catch (error) {
-        const detail = error.response?.data?.detail || '验证失败，请重试。';
-        alert(detail);
+        const detail = error.response?.data?.detail || "验证失败，请重试。";
+        ElNotification({ title: '错误', message: detail, type: 'error' });
       }
     },
     // 处理注册
     handleRegister() {
+      // 1. 检查空值
+      if (!this.username || !this.password) {
+        ElNotification({ title: '错误', message: '用户名和密码不能为空！', type: 'error' });
+        return;
+      }
+
+      // 2. 检查验证码
+      if (!this.captchaInput) {
+        ElNotification({ title: '错误', message: '请输入验证码！', type: 'error' });
+        return;
+      }
+      if (this.captchaInput !== this.generatedCaptchaText) {
+        ElNotification({ title: '错误', message: '验证码不正确！', type: 'error' });
+        this.generateCaptcha(); // 刷新验证码
+        this.captchaInput = ""; // 清空输入
+        return;
+      }
+
+      const usernameRegex = /^[a-zA-Z0-9\u4e00-\u9fa5]+$/;
+      if (!usernameRegex.test(this.username)) {
+        ElNotification({ title: '错误', message: '用户名只能包含中文、字母和数字，不能使用特殊符号。', type: 'error' });
+        return;
+      }
+
+      if (this.password !== this.confirmPassword) {
+        ElNotification({ title: '错误', message: '两次输入的密码不一致！', type: 'error' });
+        return;
+      }
+
       if (!this.isRegisterFormValid) {
-        alert('请确保所有字段都已正确填写，且两次输入的密码一致。');
+        ElNotification({ title: '错误', message: '请确保所有字段都已正确填写，且两次输入的密码一致。', type: 'error' });
         return;
       }
 
@@ -663,7 +876,7 @@ export default {
         // 暂存用户名和密码
         this.registrationData.username = this.username;
         this.registrationData.password = this.password;
-        this.navigateTo('bind-account');
+        this.navigateTo("bind-account");
       }
     },
     // 处理账号绑定 (现在是注册的最后一步)
@@ -677,14 +890,17 @@ export default {
 
         // 步骤2：验证码通过后，提交注册信息
         // 从暂存数据中获取用户名和密码
-        const response = await register(this.registrationData.username, this.registrationData.password, this.account);
-        
-        alert(`${response.data.message}！现在可以用新账号登录了。`);
-        this.navigateTo('login'); // 跳转到登录页面
+        const response = await register(
+          this.registrationData.username,
+          this.registrationData.password,
+          this.account
+        );
 
+        ElNotification({ title: '成功', message: `${response.data.message}！现在可以用新账号登录了。`, type: 'success' });
+        this.navigateTo("login"); // 跳转到登录页面
       } catch (error) {
-        const detail = error.response?.data?.detail || '操作失败，请重试。';
-        alert(`注册失败: ${detail}`);
+        const detail = error.response?.data?.detail || "操作失败，请重试。";
+        ElNotification({ title: '错误', message: `注册失败: ${detail}`, type: 'error' });
       } finally {
         this.isLoading = false;
       }
@@ -692,15 +908,15 @@ export default {
     // 表单验证
     validateForm() {
       if (!this.account) {
-        alert('请输入手机号或邮箱');
+        ElNotification({ title: '错误', message: '请输入手机号或邮箱', type: 'error' });
         return false;
       }
       if (!this.captchaInput) {
-        alert('请输入验证码');
+        ElNotification({ title: '错误', message: '请输入验证码', type: 'error' });
         return false;
       }
       if (!this.agreeTerms) {
-        alert('请同意用户协议和隐私政策');
+        ElNotification({ title: '错误', message: '请同意用户协议和隐私政策', type: 'error' });
         return false;
       }
       return true;
@@ -716,31 +932,35 @@ export default {
     // 邮箱找回密码
     async resetPasswordByEmail() {
       if (!this.isFindPasswordByEmailFormValid) {
-        alert('请确保所有字段都已正确填写，且两次输入的新密码一致。');
+        ElNotification({ title: '错误', message: '请确保所有字段都已正确填写，且两次输入的新密码一致。', type: 'error' });
         return;
       }
       try {
         // 调用后端的重置密码接口
-        const response = await resetPassword(this.email, this.captchaInput, this.newPassword);
-        alert(response.data.message || '密码重置成功！');
-        this.navigateTo('login');
-      } catch(error) {
-        const detail = error.response?.data?.detail || '操作失败，请重试。';
-        alert(`密码重置失败: ${detail}`);
+        const response = await resetPassword(
+          this.email,
+          this.captchaInput,
+          this.newPassword
+        );
+        ElNotification({ title: '成功', message: response.data.message || "密码重置成功！", type: 'success' });
+        this.navigateTo("login");
+      } catch (error) {
+        const detail = error.response?.data?.detail || "操作失败，请重试。";
+        ElNotification({ title: '错误', message: `密码重置失败: ${detail}`, type: 'error' });
       }
     },
     alertNotAvailable() {
-      alert('该功能暂未开放');
+      ElNotification({ title: '提示', message: '该功能暂未开放', type: 'info' });
     },
     // 设置认证页面的背景样式
     authPageStyle(bgName) {
-      const bgImage = this.backgroundImages[bgName] || this.backgroundImages['bg5'];
+      const bgImage = this.backgroundImages[bgName] || this.backgroundImages["bg5"];
       return {
         backgroundImage: `url(${bgImage})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center'
+        backgroundSize: "cover",
+        backgroundPosition: "center",
       };
-    }
+    },
   },
   mounted() {
     // 初始化验证码
@@ -749,13 +969,14 @@ export default {
   watch: {
     // 当视图切换时，重新生成验证码
     currentView(newView) {
-      if (newView === 'login' || newView === 'register') { // 从这里移除了 'find-password'
+      if (newView === "login" || newView === "register") {
+        // 从这里移除了 'find-password'
         this.$nextTick(() => {
           this.generateCaptcha();
         });
       }
-    }
-  }
+    },
+  },
 };
 </script>
 
@@ -774,7 +995,7 @@ export default {
 }
 
 .auth-page::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: 0;
@@ -788,10 +1009,9 @@ export default {
 .auth-page > :deep(div),
 .auth-page > :deep(header),
 .auth-page > :deep(footer) {
-    position: relative;
-    z-index: 2;
+  position: relative;
+  z-index: 2;
 }
-
 
 .auth-content {
   flex: 1;
@@ -840,7 +1060,7 @@ h2 {
 
 .login-options span {
   cursor: pointer;
-  color: #007BFF;
+  color: #007bff;
 }
 
 .login-options span:hover {
@@ -905,7 +1125,7 @@ h2 {
   white-space: nowrap;
   padding: 0 15px;
   height: 40px;
-  background-color: #007BFF;
+  background-color: #007bff;
   color: white;
   border: none;
   border-radius: 4px;
@@ -921,7 +1141,7 @@ h2 {
 button {
   width: 100%;
   height: 40px;
-  background-color: #007BFF;
+  background-color: #007bff;
   color: white;
   border: none;
   border-radius: 4px;
@@ -942,7 +1162,7 @@ button:hover {
 }
 
 .extra-options a {
-  color: #007BFF;
+  color: #007bff;
   text-decoration: none;
 }
 
@@ -973,12 +1193,12 @@ button:hover {
 }
 
 .checkbox-label input:checked + .checkbox-custom {
-  background-color: #007BFF;
-  border-color: #007BFF;
+  background-color: #007bff;
+  border-color: #007bff;
 }
 
 .checkbox-label input:checked + .checkbox-custom::after {
-  content: '✓';
+  content: "✓";
   color: white;
   font-size: 12px;
 }
@@ -1083,7 +1303,8 @@ button:hover {
   padding: 20px;
 }
 
-.terms-content, .privacy-content {
+.terms-content,
+.privacy-content {
   line-height: 1.8;
   font-size: 14px;
 }
@@ -1104,25 +1325,26 @@ button:hover {
     flex-direction: column;
     padding: 20px;
   }
-  
-  .auth-slide, .auth-form {
+
+  .auth-slide,
+  .auth-form {
     width: 100%;
     max-width: none;
     margin: 0;
   }
-  
+
   .auth-slide {
     display: none;
   }
-  
+
   .auth-form {
     margin-top: 20px;
   }
-  
+
   .reset-options {
     flex-direction: column;
   }
-  
+
   .modal-content {
     width: 90%;
   }
@@ -1130,11 +1352,11 @@ button:hover {
 
 .link-style {
   cursor: pointer;
-  color: #007BFF;
+  color: #007bff;
   font-size: 14px;
 }
 
 .link-style:hover {
   text-decoration: underline;
 }
-</style>  
+</style>

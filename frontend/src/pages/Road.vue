@@ -1,7 +1,7 @@
 <template>
-  <RoadDamageDetection />
+  <RoadDetect />
 </template>
 
 <script setup>
-import RoadDamageDetection from '../components/RoadDamageDetection.vue'
+import RoadDetect from '../components/RoadDetect.vue'
 </script> 
