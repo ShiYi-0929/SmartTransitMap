@@ -6,6 +6,8 @@ import smtplib
 from email.mime.text import MIMEText
 import time
 from sqlalchemy import func
+# The string module is no longer needed
+# import string
 
 # 数据库和安全相关导入
 from database.database import get_db
@@ -15,11 +17,15 @@ from app.core.config import SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD
 
 router = APIRouter()
 
+# 在文件顶部或合适的位置初始化一个全局字典来存储验证码
+verification_codes = {}
+
 # --- Pydantic 数据模型 (Schemas) ---
 class UserCreate(BaseModel):
     username: str
     password: str
     email: EmailStr
+    code: str # Add verification code to registration schema
 
 class UserLogin(BaseModel):
     userID: int
@@ -121,33 +127,81 @@ async def change_password_loggedin(
 @router.post("/register", summary="新用户注册")
 async def register_user(user_data: UserCreate, db: Session = Depends(get_db)):
     """
-    创建新用户，并将加密后的密码存入数据库。
+    验证验证码，然后创建新用户。
     """
-    # 检查邮箱是否已存在
+    # 1. 验证邮箱验证码 (从内存中)
+    stored_data = verification_codes.get(user_data.email)
+    if not stored_data or stored_data["code"] != user_data.code:
+        raise HTTPException(status_code=400, detail="验证码错误或已失效")
+    
+    # 检查验证码是否过期
+    if time.time() - stored_data["timestamp"] > 300: # 5分钟有效期
+        if user_data.email in verification_codes:
+            del verification_codes[user_data.email]
+        raise HTTPException(status_code=400, detail="验证码已过期，请重新获取")
+
+    # 2. 检查邮箱是否已存在
     db_user_by_email = db.query(models.UserInfo).filter(models.UserInfo.email == user_data.email).first()
     if db_user_by_email:
+        # 验证码用过一次后就应失效
+        if user_data.email in verification_codes:
+            del verification_codes[user_data.email]
         raise HTTPException(status_code=400, detail="该邮箱已被注册")
 
-    # 自动分配用户ID
+    # 3. 创建新用户
     max_id_result = db.query(func.max(models.UserInfo.userID)).first()
     new_id = (max_id_result[0] or 10000) + 1 # 如果没有用户，从10001开始
 
-    # 对密码进行哈希加密
     hashed_password = get_password_hash(user_data.password)
     
-    # 创建新的用户实例
     new_user = models.UserInfo(
         userID=new_id,
         username=user_data.username,
         password=hashed_password,
         email=user_data.email,
-        user_class="普通用户"  # 默认用户类型
+        user_class="普通用户"
     )
     
-    # 添加到数据库会话并提交
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+
+    # 4. 注册成功后，删除用过的验证码
+    if user_data.email in verification_codes:
+        del verification_codes[user_data.email]
+
+    # 5. 发送包含账户信息的欢迎邮件
+    try:
+        email_body = f"""
+        尊敬的 {new_user.username}，您好！
+
+        欢迎注册智能交通管理系统。您的账户已成功创建。
+        以下是您的登录信息，请妥善保管：
+
+        登录ID: {new_user.userID}
+        用户名: {new_user.username}
+        您设置的密码: {user_data.password}
+
+        请使用您的登录ID和密码进行登录。
+        如有任何疑问，请联系我们。
+
+        祝您使用愉快！
+
+        智能交通管理系统团队
+        """
+        msg = MIMEText(email_body, 'plain', 'utf-8')
+        msg['From'] = SENDER_EMAIL
+        msg['To'] = new_user.email
+        msg['Subject'] = "欢迎注册！您的智能交通管理系统账户信息"
+        
+        server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
+        server.login(SMTP_USERNAME, SMTP_PASSWORD)
+        server.sendmail(SENDER_EMAIL, [new_user.email], msg.as_string())
+        server.quit()
+        print(f"成功向 {new_user.email} 发送了账户信息邮件。")
+    except Exception as e:
+        print(f"警告: 用户 {new_user.userID} 注册成功，但账户信息邮件发送失败: {e}")
+        # 注意：这里我们只打印警告，不抛出异常，因为主注册流程已经成功。
     
     return {"message": "注册成功", "userID": new_user.userID, "username": new_user.username}
 
@@ -196,14 +250,16 @@ async def login_for_access_token(form_data: UserLogin, db: Session = Depends(get
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-@router.post("/send_code", summary="发送邮箱验证码")
-async def send_verification_code(data: EmailSchema, db: Session = Depends(get_db)):
+# 1. 修正路径以匹配前端调用
+# 2. 移除用户存在性检查，以支持新用户注册
+@router.post("/send-verification-code", summary="发送邮箱验证码（用于注册或验证）")
+async def send_verification_code(data: EmailSchema):
     email = data.email
 
-    # 检查邮箱是否存在
-    user = db.query(models.UserInfo).filter(models.UserInfo.email == data.email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="该邮箱尚未注册，请先完成注册。")
+    # 注册时用户不存在，所以移除这里的存在性检查
+    # user = db.query(models.UserInfo).filter(models.UserInfo.email == data.email).first()
+    # if not user:
+    #     raise HTTPException(status_code=404, detail="该邮箱尚未注册，请先完成注册。")
 
     code = str(random.randint(100000, 999999))
     
@@ -226,33 +282,34 @@ async def send_verification_code(data: EmailSchema, db: Session = Depends(get_db
         raise HTTPException(status_code=500, detail=f"邮件服务器配置错误或发送失败: {e}")
 
 
-@router.post("/verify_code", summary="验证邮箱验证码")
-async def verify_code(data: VerifyCodeSchema):
-    """
-    验证用户提交的验证码是否正确且在有效期内。
-    """
-    stored_data = verification_codes.get(data.email)
+# This endpoint is now redundant and will be removed.
+# @router.post("/verify_code", summary="验证邮箱验证码")
+# async def verify_code(data: VerifyCodeSchema):
+#     """
+#     验证用户提交的验证码是否正确且在有效期内。
+#     """
+#     stored_data = verification_codes.get(data.email)
     
-    if not stored_data:
-        raise HTTPException(status_code=400, detail="验证码错误或已失效")
+#     if not stored_data:
+#         raise HTTPException(status_code=400, detail="验证码错误或已失效")
 
-    # 检查时间是否超过5分钟 (300秒)
-    if time.time() - stored_data["timestamp"] > 300:
-        if data.email in verification_codes:
-            del verification_codes[data.email]
-        raise HTTPException(status_code=400, detail="验证码已过期，请重新获取")
+#     # 检查时间是否超过5分钟 (300秒)
+#     if time.time() - stored_data["timestamp"] > 300:
+#         if data.email in verification_codes:
+#             del verification_codes[data.email]
+#         raise HTTPException(status_code=400, detail="验证码已过期，请重新获取")
 
-    if stored_data["code"] != data.code:
-        raise HTTPException(status_code=400, detail="验证码不正确")
+#     if stored_data["code"] != data.code:
+#         raise HTTPException(status_code=400, detail="验证码不正确")
 
-    # 验证成功后，删除验证码，防止重复使用
-    if data.email in verification_codes:
-        del verification_codes[data.email]
+#     # 验证成功后，删除验证码，防止重复使用
+#     if data.email in verification_codes:
+#         del verification_codes[data.email]
     
-    return {"message": "验证成功"}
+#     return {"message": "验证成功"}
 
 
-@router.post("/reset_password", summary="通过邮件重置密码")
+@router.post("/reset-password", summary="通过邮件重置密码")
 async def reset_password_via_email(data: ResetPasswordSchema, db: Session = Depends(get_db)):
     """
     验证邮箱和验证码，然后重置用户密码。
@@ -287,6 +344,9 @@ async def reset_password_via_email(data: ResetPasswordSchema, db: Session = Depe
         del verification_codes[data.email]
 
     return {"message": "密码重置成功！"}
+
+
+# The /send-temporary-password endpoint is being removed as requested.
 
 
 @router.get("/ping", summary="服务探活")
