@@ -91,7 +91,7 @@
                     {{ alarm.message }}
                   </div>
                   <div class="text-red-600 text-sm">
-                    严重程度: {{ alarm.level }} | {{ alarm.time }}
+                    严重程度: {{ alarm.level }}
                   </div>
                 </div>
                 <button
@@ -784,63 +784,43 @@
             <div
               v-for="record in filteredHistory"
               :key="record.id"
-              class="border border-slate-200 rounded-lg p-4 hover:bg-slate-50 transition-colors"
+              class="border border-slate-200 rounded-lg p-4 hover:bg-slate-50 transition-colors cursor-pointer"
+              @click="toggleHistoryDetail(record)"
             >
               <div class="flex items-center justify-between">
                 <div class="flex-1">
                   <div class="flex items-center space-x-3">
-                    <div
-                      class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center"
-                    >
-                      <component
-                        :is="record.type === 'video' ? 'Video' : 'FileImage'"
-                        class="h-6 w-6 text-blue-600"
-                      />
+                    <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <component :is="record.type === 'video' ? 'Video' : 'FileImage'" class="h-6 w-6 text-blue-600" />
                     </div>
                     <div>
-                      <h3 class="font-medium text-slate-800">
-                        {{ record.filename }}
-                      </h3>
-                      <p class="text-sm text-slate-600">
-                        检测时间: {{ formatDate(record.timestamp) }}
-                      </p>
+                      <h3 class="font-medium text-slate-800">{{ record.filename }}</h3>
+                      <p class="text-sm text-slate-600">检测时间: {{ formatDate(record.timestamp) }}</p>
                     </div>
                   </div>
                 </div>
                 <div class="text-right">
-                  <div class="text-lg font-bold text-blue-600">
-                    {{ record.damageCount }}
-                  </div>
+                  <div class="text-lg font-bold text-blue-600">{{ record.damageCount }}</div>
                   <div class="text-sm text-slate-600">检测到病害</div>
                 </div>
               </div>
-
-              <div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div>
-                  <span class="text-slate-600">总面积:</span>
-                  <span class="font-medium ml-1 text-slate-800"
-                    >{{ record.totalArea }}m²</span
-                  >
+              <!-- 展开详情 -->
+              <el-collapse-transition>
+                <div v-if="expandedHistoryId === record.id && historyDetailMap[record.id]" class="mt-4 bg-slate-50 rounded p-4">
+                  <div class="mb-2 font-medium">病害总数：{{ historyDetailMap[record.id].totalCount }}</div>
+                  <div class="mb-2">平均置信度：{{ historyDetailMap[record.id].avgConfidence }}%</div>
+                  <div class="mb-2">各类型数量：</div>
+                  <ul class="mb-2 list-disc list-inside">
+                    <li v-for="(count, type) in historyDetailMap[record.id].typeCount" :key="type">{{ type }}：{{ count }} 个</li>
+                  </ul>
+                  <div class="mb-2">病害详情：</div>
+                  <ul class="list-decimal list-inside">
+                    <li v-for="d in historyDetailMap[record.id].damages" :key="d.id">
+                      类型：{{ d.type }}，置信度：{{ (d.confidence * 100).toFixed(1) }}%
+                    </li>
+                  </ul>
                 </div>
-                <div>
-                  <span class="text-slate-600">平均置信度:</span>
-                  <span class="font-medium ml-1 text-slate-800"
-                    >{{ record.confidence }}%</span
-                  >
-                </div>
-                <div>
-                  <span class="text-slate-600">严重病害:</span>
-                  <span class="font-medium ml-1 text-red-600">{{
-                    record.severeDamages
-                  }}</span>
-                </div>
-                <div>
-                  <span class="text-slate-600">检测用时:</span>
-                  <span class="font-medium ml-1 text-slate-800"
-                    >{{ record.detectionTime }}s</span
-                  >
-                </div>
-              </div>
+              </el-collapse-transition>
             </div>
           </div>
 
@@ -937,6 +917,8 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-vue-next";
+import { detectionAPI } from "../api/detection";
+import { ElCollapseTransition } from 'element-plus'
 
 export default {
   name: "RoadDamageDetection",
@@ -962,6 +944,7 @@ export default {
     Play,
     ChevronLeft,
     ChevronRight,
+    ElCollapseTransition,
   },
   setup() {
     // 响应式数据
@@ -994,6 +977,8 @@ export default {
     const searchQuery = ref("");
     const filterType = ref("all");
     const historyRecords = ref([]);
+    const expandedHistoryId = ref(null)
+    const historyDetailMap = ref({})
 
     // API 基础URL
     const API_BASE = "/api";
@@ -1102,6 +1087,7 @@ export default {
       if (fileInput.value) {
         fileInput.value.value = "";
       }
+      alarms.value = []; // 新增：清空告警
     };
 
     const formatFileSize = (bytes) => {
@@ -1125,15 +1111,16 @@ export default {
     // 上传文件
     /* eslint-disable no-unused-vars */
     const uploadImage = async (file) => {
-      const formData = new FormData();
-      formData.append("image", file);
+      // const formData = new FormData();
+      // formData.append("image", file);
 
       try {
-        const response = await fetch(`${API_BASE}/upload/image`, {
-          method: "POST",
-          body: formData,
-        });
-        return await response.json();
+        // const response = await fetch(`${API_BASE}/upload/image`, {
+        //   method: "POST",
+        //   body: formData,
+        // });
+        // return await response.json();
+        return await detectionAPI.uploadImage(file);
       } catch (error) {
         console.error("上传失败:", error);
         throw error;
@@ -1302,6 +1289,8 @@ export default {
           type: "detection",
           result: `检测到 ${detectionResult.value.totalCount} 处病害`,
         });
+        // 检测完成后获取告警
+        await fetchAlarms();
       } catch (error) {
         console.error("检测失败:", error);
         alert("检测失败，请重试");
@@ -1379,10 +1368,13 @@ export default {
       alarms.value = [];
     };
 
+    // 替换fetch相关方法
+    // 获取告警信息
     const fetchAlarms = async () => {
       try {
-        const response = await fetch(`${API_BASE}/alarm`);
-        const data = await response.json();
+        // const response = await fetch(`${API_BASE}/alarm`);
+        // const data = await response.json();
+        const data = await detectionAPI.getAlarms();
         alarms.value = data.alarms || [];
       } catch (error) {
         console.error("获取告警数据失败:", error);
@@ -1397,10 +1389,12 @@ export default {
       }
     };
 
+    // 获取统计数据
     const fetchStats = async () => {
       try {
-        const response = await fetch(`${API_BASE}/trend`);
-        const data = await response.json();
+        // const response = await fetch(`${API_BASE}/trend`);
+        // const data = await response.json();
+        const data = await detectionAPI.getStatistics();
         stats.value = {
           todayDetections: data.todayDetections || 23,
           totalDamages: data.totalDamages || 45,
@@ -1427,17 +1421,17 @@ export default {
             { name: "坑洞", count: 12, color: "#f97316" },
             { name: "破损", count: 10, color: "#eab308" },
             { name: "其他", count: 5, color: "#6b7280" },
-            { name: "破损", count: 10, color: "#eab308" },
-            { name: "其他", count: 5, color: "#6b7280" },
           ],
         };
       }
     };
 
+    // 获取日志
     const fetchLogs = async () => {
       try {
-        const response = await fetch(`${API_BASE}/logs`);
-        const data = await response.json();
+        // const response = await fetch(`${API_BASE}/logs`);
+        // const data = await response.json();
+        const data = await detectionAPI.getLogs();
         logs.value = data.logs || [];
       } catch (error) {
         console.error("获取日志失败:", error);
@@ -1603,16 +1597,35 @@ export default {
       });
     };
 
+    const toggleHistoryDetail = async (record) => {
+      if (expandedHistoryId.value === record.id) {
+        expandedHistoryId.value = null
+        return
+      }
+      expandedHistoryId.value = record.id
+      if (!historyDetailMap.value[record.id]) {
+        // 获取详情
+        const res = await detectionAPI.getDetectionResult(record.id)
+        // 适配后端返回结构
+        historyDetailMap.value[record.id] = {
+          totalCount: res.totalCount,
+          typeCount: res.typeCount, // { 裂缝: 2, 坑洞: 1 }
+          avgConfidence: res.avgConfidence,
+          damages: res.damages // [{id, type, confidence, ...}]
+        }
+      }
+    }
+
     onMounted(() => {
       updateTime();
       setInterval(updateTime, 1000);
 
-      fetchAlarms();
+      // fetchAlarms(); // 页面初始不再自动获取告警
       fetchStats();
       fetchLogs();
       loadHistory();
 
-      setInterval(fetchAlarms, 30000);
+      // setInterval(fetchAlarms, 30000); // 不再定时自动获取告警
     });
 
     return {
@@ -1664,6 +1677,9 @@ export default {
       getLogIcon,
       getLogIconStyle,
       formatTime,
+      expandedHistoryId,
+      historyDetailMap,
+      toggleHistoryDetail,
     };
   },
 };
