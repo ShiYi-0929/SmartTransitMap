@@ -1,0 +1,19 @@
+node_modules
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+.venv/
+venv/
+
+# Node.js modules (if frontend is in the same repo)
+node_modules/
+
+# IDE-specific files (e.g., VS Code)
+.vscode/
+
+# Logs
+*.log
+instance/ # 如果 instance 目录只存放日志和临时文件
