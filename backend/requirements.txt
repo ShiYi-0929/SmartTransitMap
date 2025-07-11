@@ -8,3 +8,9 @@ loguru
 PyMySQL
 python-jose[cryptography]
 passlib[bcrypt] 
+face_recognition
+numpy
+pillow
+dlib
+opencv-python
+scipy 

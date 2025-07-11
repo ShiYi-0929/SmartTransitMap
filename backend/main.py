@@ -28,3 +28,9 @@ app.include_router(road.router, prefix="/api/road", tags=["road"])
 app.include_router(traffic.router, prefix="/api/traffic", tags=["traffic"])
 app.include_router(face.router, prefix="/api/face", tags=["face"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
+
+# --- 启动服务 ---
+if __name__ == "__main__":
+    import uvicorn
+    print("启动 FastAPI 服务...")
+    uvicorn.run(app, host="0.0.0.0", port=8000)

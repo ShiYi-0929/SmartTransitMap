@@ -1,11 +1,12 @@
 import os
+from urllib.parse import quote_plus
 
 # --- 数据库配置 ---
 # 请根据您的本地MySQL环境修改以下信息
 DB_HOST = os.environ.get("DB_HOST", "localhost")
 DB_PORT = os.environ.get("DB_PORT", "3306")
 DB_USER = os.environ.get("DB_USER", "root") # 通常是 'root'
-DB_PASSWORD = os.environ.get("DB_PASSWORD", "237466") # 请确保这里是您正确的密码
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "Ylm091516%40") # 请确保这里是您正确的密码
 DB_NAME = os.environ.get("DB_NAME", "user")
 
 # SQLAlchemy 数据库连接URL
