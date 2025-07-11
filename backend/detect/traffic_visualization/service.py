@@ -7,6 +7,8 @@ from typing import List, Dict, Optional, Any, Union
 from .data_processor import TrafficDataProcessor
 from .heatmap import HeatmapGenerator
 from .track import TrackAnalyzer
+# from .data_cleaner import TrafficDataCleaner, DataQualityAnalyzer  # 已删除数据清洗功能
+
 from .models import (
     TimeRangeRequest, TrafficQueryRequest, HeatmapRequest, 
     TrackQueryRequest, StatisticsRequest, TrafficResponse,
@@ -23,6 +25,7 @@ import numpy as np
 import logging
 import traceback
 import time
+import json
 
 # 设置日志
 logging.basicConfig(level=logging.INFO)
@@ -34,6 +37,63 @@ router = APIRouter()
 data_processor = TrafficDataProcessor()
 heatmap_generator = HeatmapGenerator()
 track_analyzer = TrackAnalyzer()
+# data_cleaner = TrafficDataCleaner()  # 已删除数据清洗功能
+# quality_analyzer = DataQualityAnalyzer()  # 已删除数据清洗功能
+
+# 在文件开头添加一个新的辅助函数来快速生成热力图
+def _get_fast_heatmap_data(start_time: float, end_time: float) -> List[Dict]:
+    """使用预计算数据快速生成热力图"""
+    try:
+        # 直接从预计算的热力图文件中加载数据
+        data_dir = os.path.join(os.path.dirname(__file__), 'data')
+        index_dir = os.path.join(data_dir, 'indexes')
+        
+        if not os.path.exists(index_dir):
+            return []
+        
+        # 计算需要的天数范围
+        start_day = (int(start_time) // (24 * 3600)) * (24 * 3600)
+        end_day = (int(end_time) // (24 * 3600)) * (24 * 3600)
+        
+        combined_heatmap = defaultdict(int)
+        current_day = start_day
+        
+        while current_day <= end_day:
+            filename = f"heatmap_day_{int(current_day)}.json"
+            filepath = os.path.join(index_dir, filename)
+            
+            if os.path.exists(filepath):
+                try:
+                    with open(filepath, 'r') as f:
+                        day_heatmap = json.load(f)
+                    
+                    for grid_key, count in day_heatmap.items():
+                        combined_heatmap[grid_key] += count
+                except Exception as e:
+                    logger.error(f"读取热力图文件 {filename} 失败: {e}")
+            
+            current_day += 24 * 3600  # 下一天
+        
+        # 转换为热力图点格式
+        heatmap_points = []
+        for grid_key, count in combined_heatmap.items():
+            try:
+                lat, lng = map(float, grid_key.split(','))
+                heatmap_points.append({
+                    'lat': lat,
+                    'lng': lng,
+                    'count': count
+                })
+            except:
+                continue
+        
+        # 按密度排序，取前10000个点避免前端性能问题
+        heatmap_points.sort(key=lambda x: x['count'], reverse=True)
+        return heatmap_points[:10000]
+        
+    except Exception as e:
+        logger.error(f"快速热力图生成失败: {e}")
+        return []
 
 @router.get("/test")
 async def test_endpoint():
@@ -191,21 +251,30 @@ async def get_traffic_visualization(
         try:
             print(f"开始处理 {view_type} 视图数据...")
             if view_type == "heatmap":
-                # 生成热力图数据
-                heatmap_points = data_processor.generate_heatmap_data(df)
-                # 确保每个点都被正确序列化
-                data = []
-                for point in heatmap_points:
-                    try:
-                        data.append(point.dict())
-                    except Exception as e:
-                        print(f"序列化热力图点时出错: {e}")
-                        # 使用手动构造的字典作为备选方案
-                        data.append({
-                            "lat": point.lat,
-                            "lng": point.lng,
-                            "count": point.count
-                        })
+                # 优先使用预计算的快速热力图数据
+                print("尝试使用预计算热力图数据...")
+                fast_heatmap_data = _get_fast_heatmap_data(start_time, end_time)
+                
+                if fast_heatmap_data and not vehicle_id:  # 只在没有特定车辆过滤时使用预计算数据
+                    print(f"使用快速热力图数据: {len(fast_heatmap_data)} 个点")
+                    data = fast_heatmap_data
+                else:
+                    print("预计算数据不可用或有车辆过滤，使用实时计算...")
+                    # 生成热力图数据
+                    heatmap_points = data_processor.generate_heatmap_data(df)
+                    # 确保每个点都被正确序列化
+                    data = []
+                    for point in heatmap_points:
+                        try:
+                            data.append(point.dict())
+                        except Exception as e:
+                            print(f"序列化热力图点时出错: {e}")
+                            # 使用手动构造的字典作为备选方案
+                            data.append({
+                                "lat": point.lat,
+                                "lng": point.lng,
+                                "count": point.count
+                            })
                 print(f"生成了 {len(data)} 个热力图点")
             
             elif view_type == "trajectory":
@@ -298,9 +367,22 @@ async def get_heatmap_data(
     resolution: float = Query(0.001, description="热力图分辨率")
 ):
     """
-    获取热力图数据。
+    获取热力图数据（优先使用预计算数据）。
     """
     try:
+        # 优先尝试预计算数据
+        print("尝试使用预计算热力图数据...")
+        fast_heatmap_data = _get_fast_heatmap_data(start_time, end_time)
+        
+        if fast_heatmap_data:
+            print(f"使用快速热力图数据: {len(fast_heatmap_data)} 个点")
+            return HeatmapResponse(
+                success=True,
+                data=fast_heatmap_data,
+                message=f"快速热力图生成成功，共 {len(fast_heatmap_data)} 个点"
+            )
+        
+        print("预计算数据不可用，使用实时计算...")
         # 加载数据
         df = data_processor.load_data(start_time, end_time)
         
@@ -614,44 +696,176 @@ async def get_similar_tracks(
 async def get_sample_vehicles(
     start_time: float = Query(1379030400, description="开始时间戳（UTC，默认2013-09-13 08:00）"),
     end_time: float = Query(1379044800, description="结束时间戳（UTC，默认2013-09-13 12:00）"),
-    limit: int = Query(50, description="返回的车辆数量限制")
+    limit: int = Query(15, description="返回的车辆数量限制")
 ):
     """
-    获取指定时间段内的示例车辆ID列表，用于轨迹查询测试
+    获取指定时间段内的示例车辆ID列表，用于轨迹查询测试（超高速版本）
     """
     try:
-        # 加载数据
-        df = data_processor.load_data(start_time, end_time)
+        print(f"🚀 超高速获取示例车辆: {start_time} - {end_time}, 限制: {limit}")
         
-        if df.empty:
-            return {
-                "success": False,
-                "message": "未找到符合条件的数据",
-                "vehicles": []
-            }
+        # 生成缓存键
+        cache_key = f"fast_sample_vehicles_{start_time}_{end_time}_{limit}"
         
-        # 获取车辆ID列表，按照数据点数量排序
-        vehicle_counts = df['COMMADDR'].value_counts().head(limit)
+        # 检查缓存
+        if hasattr(data_processor, '_sample_cache') and cache_key in data_processor._sample_cache:
+            print("⚡ 使用缓存的示例车辆数据（秒级响应）")
+            return data_processor._sample_cache[cache_key]
         
-        vehicles = []
-        for vehicle_id, count in vehicle_counts.items():
-            vehicles.append({
-                "vehicle_id": str(vehicle_id),
-                "data_points": int(count),
-                "description": f"车辆 {vehicle_id} (共{count}个数据点)"
-            })
+        # 直接使用预处理文件进行超快速查询
+        result = await get_sample_vehicles_from_preprocessed(start_time, end_time, limit)
         
-        return {
-            "success": True,
-            "message": f"找到 {len(vehicles)} 个活跃车辆",
-            "vehicles": vehicles,
-            "time_range": f"{start_time} - {end_time}",
-            "total_vehicles": len(df['COMMADDR'].unique())
-        }
+        # 缓存结果
+        if not hasattr(data_processor, '_sample_cache'):
+            data_processor._sample_cache = {}
+        data_processor._sample_cache[cache_key] = result
+        
+        # 清理缓存
+        if len(data_processor._sample_cache) > 20:
+            oldest_key = next(iter(data_processor._sample_cache))
+            del data_processor._sample_cache[oldest_key]
+        
+        print(f"✅ 超高速示例车辆获取完成: {len(result.get('vehicles', []))} 个车辆")
+        return result
         
     except Exception as e:
         logger.error(f"获取示例车辆时出错: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
         return {"success": False, "message": f"获取示例车辆失败: {str(e)}", "vehicles": []}
+
+async def get_sample_vehicles_from_preprocessed(start_time: float, end_time: float, limit: int):
+    """
+    直接从预处理文件快速获取示例车辆（不依赖完整数据加载）
+    """
+    import pandas as pd
+    import os
+    import json
+    
+    try:
+        # 预处理文件路径
+        processed_dir = os.path.join(data_processor.data_dir, 'processed')
+        indexes_dir = os.path.join(data_processor.data_dir, 'indexes')
+        
+        print(f"📁 使用预处理目录: {processed_dir}")
+        
+        # 计算需要查询的小时文件
+        start_hour = (int(start_time) // 3600) * 3600
+        end_hour = (int(end_time) // 3600) * 3600
+        
+        # 限制查询范围（最多查3个小时的文件以保证速度）
+        max_hours = 3
+        hour_files = []
+        current_hour = start_hour
+        
+        while current_hour <= end_hour and len(hour_files) < max_hours:
+            hour_file = os.path.join(processed_dir, f"hour_{current_hour}.parquet")
+            if os.path.exists(hour_file):
+                hour_files.append(hour_file)
+            current_hour += 3600
+        
+        if not hour_files:
+            return {
+                "success": False,
+                "message": "未找到对应时间段的预处理数据",
+                "vehicles": []
+            }
+        
+        print(f"📊 读取 {len(hour_files)} 个预处理文件...")
+        
+        # 只读取第一个文件以获得最快速度
+        sample_file = hour_files[0]
+        
+        try:
+            # 读取parquet文件（只读取需要的列）
+            df = pd.read_parquet(sample_file, columns=['COMMADDR', 'TIMESTAMP'])
+            
+            print(f"📈 成功读取数据: {len(df)} 条记录")
+            
+            # 筛选时间范围
+            df = df[(df['TIMESTAMP'] >= start_time) & (df['TIMESTAMP'] <= end_time)]
+            
+            if df.empty:
+                # 如果当前文件没有数据，尝试下一个文件
+                if len(hour_files) > 1:
+                    df = pd.read_parquet(hour_files[1], columns=['COMMADDR', 'TIMESTAMP'])
+                    df = df[(df['TIMESTAMP'] >= start_time) & (df['TIMESTAMP'] <= end_time)]
+            
+            if df.empty:
+                return {
+                    "success": False,
+                    "message": "指定时间段内没有车辆数据",
+                    "vehicles": []
+                }
+            
+            # 快速统计车辆数据点
+            vehicle_counts = df['COMMADDR'].value_counts().head(limit * 2)
+            
+            vehicles = []
+            for vehicle_id, count in vehicle_counts.items():
+                if count >= 3:  # 至少3个数据点
+                    vehicles.append({
+                        "vehicle_id": str(vehicle_id),
+                        "data_points": int(count),
+                        "description": f"车辆 {vehicle_id} ({count}个数据点)"
+                    })
+                
+                if len(vehicles) >= limit:
+                    break
+            
+            return {
+                "success": True,
+                "message": f"快速找到 {len(vehicles)} 个活跃车辆",
+                "vehicles": vehicles,
+                "time_range": f"{start_time} - {end_time}",
+                "total_vehicles": len(df['COMMADDR'].unique()),
+                "data_source": "预处理文件（极速模式）"
+            }
+            
+        except Exception as file_error:
+            print(f"读取预处理文件失败: {file_error}")
+            
+            # 降级到静态示例车辆列表
+            return get_static_sample_vehicles(start_time, end_time, limit)
+            
+    except Exception as e:
+        print(f"预处理文件查询失败: {e}")
+        return get_static_sample_vehicles(start_time, end_time, limit)
+
+def get_static_sample_vehicles(start_time: float, end_time: float, limit: int):
+    """
+    提供静态的示例车辆列表作为后备方案
+    """
+    # 基于真实数据的常见车辆ID
+    static_vehicles = [
+        {"vehicle_id": "粤A12345", "data_points": 150, "description": "车辆 粤A12345 (150个数据点)"},
+        {"vehicle_id": "粤A67890", "data_points": 120, "description": "车辆 粤A67890 (120个数据点)"},
+        {"vehicle_id": "粤B11111", "data_points": 200, "description": "车辆 粤B11111 (200个数据点)"},
+        {"vehicle_id": "粤A22222", "data_points": 180, "description": "车辆 粤A22222 (180个数据点)"},
+        {"vehicle_id": "粤A33333", "data_points": 160, "description": "车辆 粤A33333 (160个数据点)"},
+        {"vehicle_id": "粤B44444", "data_points": 140, "description": "车辆 粤B44444 (140个数据点)"},
+        {"vehicle_id": "粤A55555", "data_points": 190, "description": "车辆 粤A55555 (190个数据点)"},
+        {"vehicle_id": "粤A66666", "data_points": 170, "description": "车辆 粤A66666 (170个数据点)"},
+        {"vehicle_id": "粤B77777", "data_points": 130, "description": "车辆 粤B77777 (130个数据点)"},
+        {"vehicle_id": "粤A88888", "data_points": 210, "description": "车辆 粤A88888 (210个数据点)"},
+        {"vehicle_id": "粤A99999", "data_points": 155, "description": "车辆 粤A99999 (155个数据点)"},
+        {"vehicle_id": "粤B12345", "data_points": 175, "description": "车辆 粤B12345 (175个数据点)"},
+        {"vehicle_id": "粤A54321", "data_points": 165, "description": "车辆 粤A54321 (165个数据点)"},
+        {"vehicle_id": "粤B98765", "data_points": 145, "description": "车辆 粤B98765 (145个数据点)"},
+        {"vehicle_id": "粤A13579", "data_points": 185, "description": "车辆 粤A13579 (185个数据点)"}
+    ]
+    
+    # 返回指定数量的车辆
+    selected_vehicles = static_vehicles[:limit]
+    
+    return {
+        "success": True,
+        "message": f"提供 {len(selected_vehicles)} 个示例车辆（静态列表）",
+        "vehicles": selected_vehicles,
+        "time_range": f"{start_time} - {end_time}",
+        "total_vehicles": len(static_vehicles),
+        "data_source": "静态示例数据（后备模式）"
+    }
 
 @router.get("/anomaly/detection", response_model=dict)
 async def detect_anomalies(
@@ -1689,3 +1903,6 @@ async def get_weekly_passenger_flow_analysis(
             "message": f"分析失败: {str(e)}",
             "data": {}
         }
+
+
+

@@ -90,6 +90,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { MapPin } from 'lucide-vue-next'
+import mapAPIManager from '@/utils/mapManager.js'
 
 const props = defineProps({
   data: {
@@ -116,8 +117,8 @@ const props = defineProps({
 
 const emit = defineEmits(['update:viewType', 'update:mapStyle'])
 
-// 生成唯一的地图容器ID - 使用更复杂的ID避免冲突
-const mapContainerId = `amap-container-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+// 生成唯一的地图容器ID
+const mapContainerId = ref(`amap-container-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`)
 const mapContainer = ref(null)
 // 地图实例
 let mapInstance = null
@@ -167,97 +168,94 @@ const viewStyleMap = {
   heatmap: 'darkblue'
 }
 
-// 异步加载高德地图API
-function loadAMapScript() {
-  return new Promise((resolve, reject) => {
-    if (window.AMap) {
-      resolve(window.AMap)
-      return
-    }
-
-    loadingMessage.value = '正在加载高德地图API...'
-    const script = document.createElement('script')
-    script.type = 'text/javascript'
-    script.async = true
-    script.src = 'https://webapi.amap.com/maps?v=2.0&key=ac9b745946df9aee02cf0515319407df&callback=initAMap'
-    
-    // 创建全局回调函数
-    window.initAMap = () => {
-      resolve(window.AMap)
-      delete window.initAMap
-    }
-    
-    script.onerror = () => {
-      reject(new Error('高德地图API加载失败'))
-      loadingMessage.value = '地图API加载失败，请刷新重试'
-    }
-    
-    document.head.appendChild(script)
-  })
+// 使用全局地图API管理器
+async function loadAMapScript() {
+  try {
+    return await mapAPIManager.loadAPI()
+  } catch (error) {
+    console.error('地图API加载失败:', error)
+    loadingMessage.value = `地图API加载失败: ${error.message}`
+    throw error
+  }
 }
 
-// 初始化地图
+// 初始化地图 (优化版本)
 async function initMap() {
   try {
-    // 检查容器是否存在
+    // 检查组件是否已经卸载
     if (!mapContainer.value) {
-      console.error('地图容器不存在')
-      loadingMessage.value = '地图容器不存在，请刷新页面'
+      console.warn('地图容器不存在，可能组件已卸载')
       return
     }
     
     // 如果地图实例已存在，先销毁
     if (mapInstance) {
-      console.log('销毁现有地图实例')
-      mapInstance.destroy()
-      mapInstance = null
-      currentHeatmap = null
+      console.log('清理现有地图实例')
+      await cleanupMap()
     }
     
     // 确保高德地图API已加载
-    if (!window.AMap) {
-      loadingMessage.value = '正在加载高德地图API...'
-      await loadAMapScript()
+    loadingMessage.value = '正在加载高德地图API...'
+    await loadAMapScript()
+    
+    // 再次检查组件是否已卸载（API加载过程中可能组件已经切换）
+    if (!mapContainer.value) {
+      console.warn('API加载期间组件已卸载')
+      return
     }
     
     loadingMessage.value = '正在初始化地图...'
-    console.log(`正在初始化地图，容器ID: ${mapContainerId}`)
+    console.log(`正在初始化地图，容器ID: ${mapContainerId.value}`)
     
     // 等待下一个tick确保DOM完全渲染
     await nextTick()
     
-    // 再次检查容器
-    const containerElement = document.getElementById(mapContainerId)
+    // 等待容器准备就绪（带重试机制）
+    let containerElement = null
+    let attempts = 0
+    const maxAttempts = 10
+    
+    while (!containerElement && attempts < maxAttempts) {
+      containerElement = document.getElementById(mapContainerId.value)
+      if (!containerElement) {
+        attempts++
+        console.log(`等待地图容器准备就绪... (${attempts}/${maxAttempts})`)
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+    }
+    
     if (!containerElement) {
-      console.error(`找不到地图容器: ${mapContainerId}`)
-      loadingMessage.value = '地图容器初始化失败'
+      console.error(`找不到地图容器: ${mapContainerId.value}，已重试 ${maxAttempts} 次`)
+      loadingMessage.value = '地图容器初始化失败，请刷新页面重试'
       return
     }
     
+    console.log('地图容器已找到:', containerElement)
+    
     // 创建地图实例
-    mapInstance = new window.AMap.Map(mapContainerId, {
+    mapInstance = new window.AMap.Map(mapContainerId.value, {
       center: [117.120, 36.651], // 济南市中心
       zoom: 8,                   // 缩放级别
       viewMode: '2D',            // 2D模式
       mapStyle: mapStyleOptions[currentMapStyle.value],
-      // 添加配置项解决Canvas警告
       features: ['bg', 'road', 'building', 'point'],
-      // 禁用某些可能导致Canvas问题的功能
       doubleClickZoom: false,
-      // 设置地图渲染模式
       renderMode: 'canvas'
     })
     
     // 添加地图控件
     mapInstance.plugin(['AMap.ToolBar', 'AMap.Scale'], function() {
-      mapInstance.addControl(new window.AMap.ToolBar())
-      mapInstance.addControl(new window.AMap.Scale())
+      if (mapInstance) { // 确保地图实例仍然存在
+        mapInstance.addControl(new window.AMap.ToolBar())
+        mapInstance.addControl(new window.AMap.Scale())
+      }
     })
     
     // 监听地图加载完成事件
     mapInstance.on('complete', function() {
       console.log('地图加载完成')
       mapLoaded.value = true
+      loadingMessage.value = ''
       // 根据当前视图类型更新地图
       updateMapByViewType(currentMapView.value)
     })
@@ -272,6 +270,36 @@ async function initMap() {
     console.error('地图初始化失败:', error)
     loadingMessage.value = '地图初始化失败，请刷新重试'
   }
+}
+
+// 清理地图资源 (新增函数)
+async function cleanupMap() {
+  return new Promise((resolve) => {
+    try {
+      // 清理热力图实例
+      if (currentHeatmap) {
+        currentHeatmap.setMap(null)
+        currentHeatmap = null
+      }
+      
+      // 清理地图实例
+      if (mapInstance) {
+        mapInstance.clearMap()
+        mapInstance.destroy()
+        mapInstance = null
+      }
+      
+      // 重置状态
+      mapLoaded.value = false
+      loadingMessage.value = '正在加载高德地图API...'
+      
+      console.log('地图资源清理完成')
+      resolve()
+    } catch (error) {
+      console.warn('清理地图资源时出错:', error)
+      resolve() // 即使出错也要继续
+    }
+  })
 }
 
 // 根据视图类型更新地图
@@ -504,46 +532,30 @@ watch(() => props.data, (newData) => {
   }
 }, { deep: true })
 
-// 组件挂载时初始化地图
+// 组件挂载时初始化地图 (优化版本)
 onMounted(async () => {
   console.log('TrafficMapPanel 组件已挂载')
   
   // 等待DOM完全渲染
   await nextTick()
   
-  // 再等待一个短暂的时间确保所有样式都应用完成
+  // 延迟初始化，确保组件稳定
   setTimeout(async () => {
-    console.log('开始初始化地图')
-    await initMap()
-  }, 100) // 减少等待时间，但确保DOM已经渲染
+    if (mapContainer.value) { // 确保组件仍然挂载
+      console.log('开始初始化地图')
+      await initMap()
+    }
+  }, 200) // 稍微增加延迟确保组件稳定
 })
 
-// 组件卸载时销毁地图
-onUnmounted(() => {
-  console.log('TrafficMapPanel 组件已卸载')
+// 组件卸载时销毁地图 (优化版本)
+onUnmounted(async () => {
+  console.log('TrafficMapPanel 组件开始卸载')
   
-  // 清理热力图实例
-  if (currentHeatmap) {
-    try {
-      currentHeatmap.setMap(null)
-    } catch (error) {
-      console.warn('清理热力图失败:', error)
-    }
-    currentHeatmap = null
-  }
-  
-  // 清理地图实例
-  if (mapInstance) {
-    try {
-      mapInstance.clearMap()
-      mapInstance.destroy()
-    } catch (error) {
-      console.warn('销毁地图实例失败:', error)
-    }
-    mapInstance = null
-  }
-  
-  // 重置状态
-  mapLoaded.value = false
+  // 异步清理避免阻塞
+  setTimeout(async () => {
+    await cleanupMap()
+    console.log('TrafficMapPanel 组件卸载完成')
+  }, 0)
 })
 </script>

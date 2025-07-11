@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import os
+import json
 from typing import List, Dict, Tuple, Optional, Union, Any
 from datetime import datetime
 import math
@@ -41,10 +42,61 @@ class TrafficDataProcessor:
             
         print(f"数据目录: {self.data_dir}")
         
-        # 缓存已加载的数据
+        # 预处理数据目录
+        self.processed_dir = os.path.join(self.data_dir, 'processed')
+        self.index_dir = os.path.join(self.data_dir, 'indexes')
+        
+        # 检查是否存在预处理数据
+        self.use_preprocessed = (
+            os.path.exists(self.processed_dir) and 
+            os.path.exists(self.index_dir) and
+            len(os.listdir(self.processed_dir)) > 0
+        )
+        
+        if self.use_preprocessed:
+            print("✓ 发现预处理数据，将使用高效查询模式")
+            self._load_indexes()
+        else:
+            print("✗ 未发现预处理数据，将使用原始CSV文件（较慢）")
+        
+        # 增强的缓存系统
         self._cached_data = {}
+        self._cache_maxsize = 10  # 增加缓存大小
+        self._sample_cache = {}   # 采样数据缓存
+        self._heatmap_cache = {}  # 热力图缓存
         self._csv_files = None
+        
+        # 性能优化参数
+        self.max_data_points = 50000  # 单次查询最大数据点数
+        self.sample_ratio = 0.2       # 数据采样比例
+        self.enable_sampling = True   # 启用智能采样
     
+    def _load_indexes(self):
+        """加载预处理的索引数据"""
+        try:
+            # 加载车辆索引
+            vehicle_index_path = os.path.join(self.index_dir, 'vehicle_index.json')
+            if os.path.exists(vehicle_index_path):
+                with open(vehicle_index_path, 'r') as f:
+                    self.vehicle_index = json.load(f)
+                print(f"✓ 加载车辆索引: {len(self.vehicle_index)} 个车辆")
+            else:
+                self.vehicle_index = {}
+            
+            # 加载空间网格
+            self.spatial_grids = {}
+            for filename in os.listdir(self.index_dir):
+                if filename.startswith('spatial_grid_') and filename.endswith('.json'):
+                    resolution = float(filename.split('_')[2].split('.')[0])
+                    filepath = os.path.join(self.index_dir, filename)
+                    with open(filepath, 'r') as f:
+                        self.spatial_grids[resolution] = json.load(f)
+                    print(f"✓ 加载空间网格 ({resolution}): {len(self.spatial_grids[resolution])} 个网格")
+            
+        except Exception as e:
+            print(f"警告：加载索引时出错: {e}")
+            self.use_preprocessed = False
+
     def get_csv_files(self) -> List[str]:
         """获取数据目录中的所有CSV文件"""
         if self._csv_files is None:
@@ -58,7 +110,7 @@ class TrafficDataProcessor:
     
     def load_data(self, start_time: float, end_time: float, vehicle_id: str = None) -> pd.DataFrame:
         """
-        加载指定时间范围和车辆ID的数据
+        加载指定时间范围和车辆ID的数据（性能优化版本）
         
         Args:
             start_time: 开始时间戳
@@ -68,23 +120,166 @@ class TrafficDataProcessor:
         Returns:
             符合条件的数据DataFrame
         """
-        print(f"开始加载数据: {start_time} 到 {end_time}")
+        print(f"⚡ 快速加载数据: {start_time} 到 {end_time}")
+        
+        # 生成缓存键
+        cache_key = f"data_{start_time}_{end_time}_{vehicle_id}_{self.sample_ratio}"
+        
+        # 检查缓存
+        if cache_key in self._cached_data:
+            print("📦 使用缓存数据（秒级响应）")
+            return self._cached_data[cache_key]
+        
+        # 使用预处理数据进行快速查询
+        if self.use_preprocessed:
+            result = self._load_data_fast(start_time, end_time, vehicle_id)
+        else:
+            result = self._load_data_legacy(start_time, end_time, vehicle_id)
+        
+        # 智能采样以提高性能
+        if self.enable_sampling and len(result) > self.max_data_points:
+            print(f"🔄 数据量过大({len(result)}条)，进行智能采样...")
+            result = self._smart_sample_data(result, vehicle_id)
+        
+        # 更新缓存（LRU策略）
+        if len(self._cached_data) >= self._cache_maxsize:
+            # 删除最旧的缓存
+            oldest_key = next(iter(self._cached_data))
+            del self._cached_data[oldest_key]
+        
+        self._cached_data[cache_key] = result
+        print(f"✅ 数据加载完成: {len(result)} 条记录")
+        return result
+    
+    def _smart_sample_data(self, df: pd.DataFrame, vehicle_id: str = None) -> pd.DataFrame:
+        """智能数据采样，保持数据分布特性"""
+        if df.empty:
+            return df
+        
+        # 如果指定了车辆ID，保留所有该车辆的数据
+        if vehicle_id:
+            vehicle_data = df[df['COMMADDR'].astype(str) == str(vehicle_id)]
+            if len(vehicle_data) <= self.max_data_points:
+                return vehicle_data
+            else:
+                # 对单车数据进行时间均匀采样
+                n_samples = min(self.max_data_points, len(vehicle_data))
+                indices = np.linspace(0, len(vehicle_data)-1, n_samples, dtype=int)
+                return vehicle_data.iloc[indices].copy()
+        
+        # 对所有车辆进行分层采样
+        target_size = int(self.max_data_points * self.sample_ratio)
+        
+        # 按车辆ID分组采样
+        sampled_groups = []
+        vehicle_groups = df.groupby('COMMADDR')
+        
+        # 计算每个车辆应该采样的数量
+        n_vehicles = len(vehicle_groups)
+        samples_per_vehicle = max(1, target_size // n_vehicles)
+        
+        for vehicle_id, group in vehicle_groups:
+            if len(group) <= samples_per_vehicle:
+                sampled_groups.append(group)
+            else:
+                # 时间均匀采样
+                indices = np.linspace(0, len(group)-1, samples_per_vehicle, dtype=int)
+                sampled_groups.append(group.iloc[indices])
+        
+        result = pd.concat(sampled_groups, ignore_index=True)
+        print(f"   采样结果: {len(result)} 条记录 ({len(df)} -> {len(result)})")
+        return result
+
+    def _load_data_fast(self, start_time: float, end_time: float, vehicle_id: str = None) -> pd.DataFrame:
+        """使用预处理数据进行快速加载（优化版本）"""
+        print("🚀 使用预处理数据进行极速查询...")
+        
+        # 计算需要的时间段（小时级别）
+        start_hour = (int(start_time) // 3600) * 3600
+        end_hour = (int(end_time) // 3600) * 3600
+        
+        # 如果指定了车辆ID，先检查车辆索引
+        if vehicle_id and vehicle_id in self.vehicle_index:
+            available_hours = set(self.vehicle_index[vehicle_id])
+            print(f"🚗 车辆 {vehicle_id} 在 {len(available_hours)} 个时间段出现")
+        else:
+            available_hours = None
+        
+        # 限制最大时间范围（防止加载过多数据）
+        max_hours = 24  # 最多加载24小时的数据
+        time_span_hours = (end_hour - start_hour) // 3600
+        
+        if time_span_hours > max_hours:
+            print(f"⚠️  时间范围过大({time_span_hours}小时)，限制为{max_hours}小时")
+            end_hour = start_hour + max_hours * 3600
+        
+        # 加载相关时间段的数据
+        data_frames = []
+        current_hour = start_hour
+        processed_count = 0
+        max_files = 6  # 限制最大文件数
+        file_count = 0
+        
+        while current_hour <= end_hour and file_count < max_files:
+            if available_hours is None or current_hour in available_hours:
+                filename = f"hour_{int(current_hour)}.parquet"
+                filepath = os.path.join(self.processed_dir, filename)
+                
+                if os.path.exists(filepath):
+                    try:
+                        # 使用列选择优化
+                        columns_to_load = ['UTC', 'COMMADDR', 'LAT', 'LON', 'SPEED']
+                        df = pd.read_parquet(filepath, columns=columns_to_load)
+                        
+                        # 精确时间过滤
+                        df = df[(df['UTC'] >= start_time) & (df['UTC'] <= end_time)]
+                        
+                        # 车辆ID过滤
+                        if vehicle_id:
+                            df['COMMADDR'] = df['COMMADDR'].astype(str)
+                            df = df[df['COMMADDR'] == str(vehicle_id)]
+                        
+                        if not df.empty:
+                            data_frames.append(df)
+                            processed_count += len(df)
+                            print(f"   📁 {filename}: {len(df)} 条记录")
+                            file_count += 1
+                        
+                    except Exception as e:
+                        print(f"❌ 读取 {filename} 时出错: {e}")
+            
+            current_hour += 3600  # 下一小时
+        
+        # 合并数据
+        if data_frames:
+            result = pd.concat(data_frames, ignore_index=True)
+            
+            # 按时间排序
+            result = result.sort_values('UTC')
+            
+            print(f"⚡ 快速加载完成，共 {len(result)} 条记录")
+            return result
+        else:
+            print("❌ 未找到匹配的数据")
+            return pd.DataFrame()
+
+    def _load_data_legacy(self, start_time: float, end_time: float, vehicle_id: str = None) -> pd.DataFrame:
+        """使用原始CSV文件进行加载（备用方法）"""
+        print("使用原始CSV文件进行查询（较慢）...")
         
         # 添加数据集时间范围验证
-        # 2013年9月12日到9月18日的UTC时间戳范围（示例值，需要根据实际数据调整）
         min_valid_time = 1378944000  # 2013-09-12 00:00:00 UTC
         max_valid_time = 1379548799  # 2013-09-18 23:59:59 UTC
         
         # 检查请求的时间范围是否与数据集时间范围有交集
         if end_time < min_valid_time or start_time > max_valid_time:
             print(f"警告：请求的时间范围 ({start_time}-{end_time}) 超出数据集范围 ({min_valid_time}-{max_valid_time})")
-            return pd.DataFrame()  # 返回空数据框
+            return pd.DataFrame()
         
         # 限制查询时间范围，避免处理过多数据
         time_span_hours = (end_time - start_time) / 3600
         if time_span_hours > 24:
             print(f"警告：查询时间跨度过大 ({time_span_hours:.1f} 小时)，建议缩短到24小时以内")
-            # 可以选择截断到24小时或返回警告
             end_time = start_time + 24 * 3600
             print(f"自动截断到24小时: {start_time} 到 {end_time}")
         
@@ -108,14 +303,14 @@ class TrafficDataProcessor:
         # 存储所有符合条件的数据
         all_data = []
         total_rows_processed = 0
-        max_rows_limit = 500000  # 增加最大处理行数限制，处理更多数据
+        max_rows_limit = 200000  # 减少内存占用
         
         for i, file_path in enumerate(csv_files):
             print(f"处理文件 {i+1}/{len(csv_files)}: {os.path.basename(file_path)}")
             
             try:
                 # 使用分块读取大文件
-                chunk_size = 50000  # 减小chunk_size以提高响应速度
+                chunk_size = 50000
                 chunks = pd.read_csv(file_path, chunksize=chunk_size)
                 
                 for chunk_num, chunk in enumerate(chunks):
@@ -123,32 +318,22 @@ class TrafficDataProcessor:
                         print(f"达到最大行数限制 ({max_rows_limit})，停止处理更多数据")
                         break
                         
-                    print(f"  处理块 {chunk_num+1}, 当前块大小: {len(chunk)}")
-                    
                     # 检查必要的列是否存在
                     required_cols = ['UTC', 'LAT', 'LON', 'COMMADDR']
                     if not all(col in chunk.columns for col in required_cols):
-                        print(f"文件 {os.path.basename(file_path)} 缺少必要的列")
                         continue
                     
                     # 时间过滤
                     filtered_chunk = chunk[(chunk['UTC'] >= start_time) & (chunk['UTC'] <= end_time)]
                     
-                    if len(filtered_chunk) > 0:
-                        print(f"  时间过滤后保留 {len(filtered_chunk)} 行")
-                    
                     # 车辆ID过滤
                     if vehicle_id:
-                        # 确保类型匹配，避免因类型不一致导致过滤失败
                         filtered_chunk['COMMADDR'] = filtered_chunk['COMMADDR'].astype(str)
                         filtered_chunk = filtered_chunk[filtered_chunk['COMMADDR'] == str(vehicle_id)]
-                        if len(filtered_chunk) > 0:
-                            print(f"  车辆过滤后保留 {len(filtered_chunk)} 行")
                     
                     if not filtered_chunk.empty:
                         all_data.append(filtered_chunk)
                         total_rows_processed += len(filtered_chunk)
-                        print(f"  累计处理 {total_rows_processed} 行数据")
                 
                 if total_rows_processed >= max_rows_limit:
                     break
@@ -158,38 +343,82 @@ class TrafficDataProcessor:
         
         # 合并所有数据
         if all_data:
-            print("合并数据...")
             result_df = pd.concat(all_data, ignore_index=True)
-            print(f"最终数据集大小: {len(result_df)} 行")
             
-            # 调整采样策略：对于大数据集进行智能采样
-            if len(result_df) > 200000:
-                print(f"数据量很大，随机采样到 200000 行")
-                result_df = result_df.sample(n=200000, random_state=42)
-            elif len(result_df) > 100000:
-                print(f"数据量较大，随机采样到 100000 行")
+            # 智能采样
+            if len(result_df) > 100000:
                 result_df = result_df.sample(n=100000, random_state=42)
             
-            # 缓存结果（限制缓存大小）
-            if len(self._cached_data) < 3:  # 减少缓存数量，节省内存
+            # 缓存结果
+            if len(self._cached_data) < 3:
                 self._cached_data[cache_key] = result_df
             
             return result_df
         else:
-            print("未找到符合条件的数据")
             return pd.DataFrame()
-    
+
     def generate_heatmap_data(self, df: pd.DataFrame, resolution: float = 0.001) -> List[HeatmapPoint]:
         """
-        生成热力图数据
-        
-        Args:
-            df: 包含经纬度数据的DataFrame
-            resolution: 热力图分辨率（经纬度网格大小）
-            
-        Returns:
-            热力图点列表
+        生成热力图数据（优化缓存版本）
         """
+        # 生成热力图缓存键
+        if df.empty:
+            cache_key = f"heatmap_empty_{resolution}"
+        else:
+            # 基于数据特征生成缓存键
+            data_hash = hash(f"{len(df)}_{df['UTC'].min()}_{df['UTC'].max()}_{resolution}")
+            cache_key = f"heatmap_{data_hash}"
+        
+        # 检查缓存
+        if cache_key in self._heatmap_cache:
+            print("📦 使用热力图缓存（秒级响应）")
+            return self._heatmap_cache[cache_key]
+        
+        # 生成热力图
+        if self.use_preprocessed and hasattr(self, 'spatial_grids'):
+            result = self._generate_heatmap_fast(df, resolution)
+        else:
+            result = self._generate_heatmap_legacy(df, resolution)
+        
+        # 缓存结果（限制缓存大小）
+        if len(self._heatmap_cache) >= 5:
+            # 删除最旧的缓存
+            oldest_key = next(iter(self._heatmap_cache))
+            del self._heatmap_cache[oldest_key]
+        
+        self._heatmap_cache[cache_key] = result
+        return result
+    
+    def _generate_heatmap_fast(self, df: pd.DataFrame, resolution: float = 0.001) -> List[HeatmapPoint]:
+        """使用预计算数据快速生成热力图"""
+        # 寻找最接近的分辨率
+        available_resolutions = list(self.spatial_grids.keys())
+        if not available_resolutions:
+            return self._generate_heatmap_legacy(df, resolution)
+        
+        # 选择最接近的分辨率
+        closest_resolution = min(available_resolutions, key=lambda x: abs(x - resolution))
+        print(f"使用预计算网格 (分辨率: {closest_resolution})")
+        
+        grid_data = self.spatial_grids[closest_resolution]
+        
+        # 如果df为空或没有时间过滤需求，直接返回预计算结果
+        if df.empty:
+            heatmap_points = []
+            for grid_key, count in grid_data.items():
+                try:
+                    lat, lng = map(float, grid_key.split(','))
+                    heatmap_points.append(HeatmapPoint(lat=lat, lng=lng, count=count))
+                except:
+                    continue
+            print(f"快速热力图生成完成，共 {len(heatmap_points)} 个点")
+            return heatmap_points
+        
+        # 如果有特定数据过滤，结合实时计算
+        return self._generate_heatmap_legacy(df, resolution)
+    
+    def _generate_heatmap_legacy(self, df: pd.DataFrame, resolution: float = 0.001) -> List[HeatmapPoint]:
+        """传统方式生成热力图"""
         if df.empty:
             return []
         
@@ -219,7 +448,7 @@ class TrafficDataProcessor:
     
     def generate_track_data(self, df: pd.DataFrame, vehicle_id: str = None) -> List[VehicleTrack]:
         """
-        生成车辆轨迹数据
+        生成车辆轨迹数据（性能优化版本）
         
         Args:
             df: 包含轨迹数据的DataFrame
@@ -234,7 +463,7 @@ class TrafficDataProcessor:
         # 确保必要的列存在
         required_cols = ['UTC', 'LAT', 'LON', 'COMMADDR']
         if not all(col in df.columns for col in required_cols):
-            print("数据中缺少必要的列")
+            print("❌ 数据中缺少必要的列")
             return []
         
         # 如果指定了车辆ID，则只处理该车辆
@@ -245,11 +474,22 @@ class TrafficDataProcessor:
             if df.empty:
                 return []
         
+        # 限制处理的车辆数量以提高性能
+        unique_vehicles = df['COMMADDR'].unique()
+        max_vehicles = 50  # 最多处理50个车辆
+        
+        if len(unique_vehicles) > max_vehicles and vehicle_id is None:
+            print(f"⚠️  车辆数量过多({len(unique_vehicles)})，随机选择{max_vehicles}个")
+            selected_vehicles = np.random.choice(unique_vehicles, max_vehicles, replace=False)
+            df = df[df['COMMADDR'].isin(selected_vehicles)]
+        
         # 存储所有车辆的轨迹
         all_tracks = []
         
+        print(f"🚗 开始处理 {len(df['COMMADDR'].unique())} 个车辆的轨迹...")
+        
         # 按车辆ID分组处理
-        for veh_id, group in df.groupby('COMMADDR'):
+        for i, (veh_id, group) in enumerate(df.groupby('COMMADDR')):
             # 按时间排序
             group = group.sort_values('UTC')
             

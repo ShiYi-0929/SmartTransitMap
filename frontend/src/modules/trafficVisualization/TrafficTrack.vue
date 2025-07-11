@@ -76,11 +76,11 @@
           </select>
         </div>
         <div class="space-y-2">
-          <label class="text-sm text-blue-200">显示详细度</label>
-          <select v-model="queryParams.detail" class="input-tech">
-            <option value="full">完整轨迹</option>
-            <option value="key">关键节点</option>
-            <option value="simplified">简化路径</option>
+          <label class="text-sm text-blue-200">数据量级</label>
+          <select v-model="queryParams.dataSize" class="input-tech">
+            <option value="fast">快速模式（采样）</option>
+            <option value="medium">标准模式</option>
+            <option value="full">完整数据（慢）</option>
           </select>
         </div>
         <div class="space-y-2">
@@ -238,10 +238,20 @@
 
     <!-- 加载状态 -->
     <div v-if="loading" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div class="bg-blue-900 p-6 rounded-lg text-white">
-        <div class="flex items-center">
+      <div class="bg-blue-900 p-6 rounded-lg text-white max-w-md">
+        <div class="flex items-center mb-4">
           <div class="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-cyan-400 mr-3"></div>
           <span>正在查询轨迹数据...</span>
+        </div>
+        <div class="text-sm text-blue-200 space-y-1">
+          <div>• 性能模式: {{ queryParams.dataSize === 'fast' ? '快速模式' : queryParams.dataSize === 'medium' ? '标准模式' : '完整模式' }}</div>
+          <div>• 时间范围: {{ queryParams.startTime }} ~ {{ queryParams.endTime }}</div>
+          <div>• 车辆ID: {{ queryParams.vehicleId }}</div>
+          <div class="text-xs text-gray-400 mt-2">
+            {{ queryParams.dataSize === 'fast' ? '⚡ 使用数据采样，快速响应' : 
+               queryParams.dataSize === 'medium' ? '📊 平衡模式，适中数据量' : 
+               '🔍 完整数据，可能需要较长时间' }}
+          </div>
         </div>
       </div>
     </div>
@@ -252,6 +262,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Route, Search, X, Play, Download } from 'lucide-vue-next'
 import { getTrackData, getSampleVehicles } from '@/api/traffic'
+import mapAPIManager from '@/utils/mapManager.js'
 
 // 响应式数据
 const loading = ref(false)
@@ -265,7 +276,7 @@ const queryParams = ref({
   endTime: '2013-09-13T12:00',
   vehicleId: '',
   mode: 'single',
-  detail: 'full',
+  dataSize: 'fast',  // 默认使用快速模式
   speedFilter: ''
 })
 
@@ -320,43 +331,42 @@ const trackStats = computed(() => {
   ]
 })
 
-// 地图初始化
+// 地图初始化 (优化版本)
 async function initMap() {
-  if (!window.AMap) {
-    await loadAMapAPI()
+  try {
+    // 使用全局管理器加载API
+    await mapAPIManager.loadAPI()
+    
+    // 如果地图已存在，先清理
+    if (map) {
+      try {
+        map.clearMap()
+        map.destroy()
+        map = null
+      } catch (error) {
+        console.warn('清理现有地图失败:', error)
+      }
+    }
+    
+    // 创建新地图实例
+    map = new window.AMap.Map(mapContainerId, {
+      center: [117.120, 36.651],
+      zoom: 10,
+      mapStyle: 'amap://styles/dark'
+    })
+    
+    // 添加地图控件
+    map.plugin(['AMap.ToolBar', 'AMap.Scale'], function() {
+      if (map) { // 确保地图实例仍然存在
+        map.addControl(new window.AMap.ToolBar())
+        map.addControl(new window.AMap.Scale())
+      }
+    })
+    
+    console.log('✅ 轨迹地图初始化完成')
+  } catch (error) {
+    console.error('❌ 轨迹地图初始化失败:', error)
   }
-  
-  map = new window.AMap.Map(mapContainerId, {
-    center: [117.120, 36.651],
-    zoom: 10,
-    mapStyle: 'amap://styles/dark'
-  })
-  
-  map.plugin(['AMap.ToolBar', 'AMap.Scale'], function() {
-    map.addControl(new window.AMap.ToolBar())
-    map.addControl(new window.AMap.Scale())
-  })
-}
-
-// 加载高德地图API
-function loadAMapAPI() {
-  return new Promise((resolve, reject) => {
-    if (window.AMap) {
-      resolve()
-      return
-    }
-    
-    const script = document.createElement('script')
-    script.src = 'https://webapi.amap.com/maps?v=2.0&key=ac9b745946df9aee02cf0515319407df&callback=initAMap'
-    
-    window.initAMap = () => {
-      resolve()
-      delete window.initAMap
-    }
-    
-    script.onerror = reject
-    document.head.appendChild(script)
-  })
 }
 
 // 查询轨迹
@@ -373,16 +383,35 @@ async function queryTracks() {
     const startTimeStamp = new Date(queryParams.value.startTime).getTime() / 1000
     const endTimeStamp = new Date(queryParams.value.endTime).getTime() / 1000
     
-    const params = {
-      start_time: startTimeStamp,
-      end_time: endTimeStamp,
-      vehicle_id: queryParams.value.vehicleId.trim(),
-      view_type: 'trajectory'
+    // 根据数据量级调整时间窗口
+    let adjustedEndTime = endTimeStamp
+    const timeSpan = endTimeStamp - startTimeStamp
+    
+    if (queryParams.value.dataSize === 'fast' && timeSpan > 7200) {
+      // 快速模式限制为2小时
+      adjustedEndTime = startTimeStamp + 7200
+      console.log('⚡ 快速模式：时间范围限制为2小时')
+    } else if (queryParams.value.dataSize === 'medium' && timeSpan > 14400) {
+      // 标准模式限制为4小时
+      adjustedEndTime = startTimeStamp + 14400
+      console.log('📊 标准模式：时间范围限制为4小时')
     }
     
-    console.log('查询参数:', params)
+    const params = {
+      start_time: startTimeStamp,
+      end_time: adjustedEndTime,
+      vehicle_id: queryParams.value.vehicleId.trim(),
+      view_type: 'trajectory',
+      // 添加性能控制参数
+      performance_mode: queryParams.value.dataSize,
+      max_points: queryParams.value.dataSize === 'fast' ? 1000 : 
+                 queryParams.value.dataSize === 'medium' ? 5000 : 50000
+    }
+    
+    console.log('🚀 优化查询参数:', params)
     console.log('转换前时间:', queryParams.value.startTime, queryParams.value.endTime)
-    console.log('转换后时间戳:', startTimeStamp, endTimeStamp)
+    console.log('转换后时间戳:', startTimeStamp, adjustedEndTime)
+    console.log('性能模式:', queryParams.value.dataSize)
     
     const response = await getTrackData(params)
     
@@ -391,12 +420,24 @@ async function queryTracks() {
       processTrackData(response.data.data)
       // 在地图上显示轨迹
       displayTracksOnMap()
+      
+      // 显示加载统计
+      const totalPoints = trackData.value.reduce((sum, track) => sum + (track.points?.length || 0), 0)
+      console.log(`✅ 数据加载完成：${trackData.value.length} 条轨迹，${totalPoints} 个点`)
     } else {
       alert(response.data.message || '查询失败')
     }
   } catch (error) {
     console.error('查询轨迹失败:', error)
-    alert('查询失败，请检查网络连接')
+    
+    // 更友好的错误提示
+    if (error.code === 'ECONNABORTED') {
+      alert('请求超时，请尝试缩短查询时间范围或选择快速模式')
+    } else if (error.response?.status === 500) {
+      alert('服务器处理出错，请稍后重试或减少数据量')
+    } else {
+      alert('查询失败，请检查网络连接')
+    }
   } finally {
     loading.value = false
   }
@@ -633,26 +674,54 @@ function exportTrack() {
 // 加载示例车辆
 async function loadSampleVehicles() {
   loadingSamples.value = true
+  sampleVehicles.value = [] // 清空之前的数据
   
   try {
     // 将当前时间范围转换为时间戳
     const startTimeStamp = new Date(queryParams.value.startTime).getTime() / 1000
     const endTimeStamp = new Date(queryParams.value.endTime).getTime() / 1000
     
-    console.log('获取示例车辆，时间范围:', startTimeStamp, endTimeStamp)
+    console.log('🚗 正在获取示例车辆，时间范围:', queryParams.value.startTime, '~', queryParams.value.endTime)
     
-    const response = await getSampleVehicles(startTimeStamp, endTimeStamp, 20)
+    // 限制请求的车辆数量以提高速度
+    const response = await getSampleVehicles(startTimeStamp, endTimeStamp, 15)
     
-    if (response.data.success && response.data.vehicles) {
+    if (response && response.data && response.data.success && Array.isArray(response.data.vehicles)) {
       sampleVehicles.value = response.data.vehicles
-      console.log('获取到示例车辆:', sampleVehicles.value)
+      console.log('✅ 获取到示例车辆:', sampleVehicles.value.length, '个')
+      
+      // 显示获取结果
+      if (sampleVehicles.value.length > 0) {
+        console.log('🎯 推荐车辆:', sampleVehicles.value[0].vehicle_id)
+      }
+      
+      // 如果使用了采样模式，给用户提示
+      if (response.data.sampling_mode) {
+        console.log('⚡', response.data.sampling_mode)
+      }
     } else {
-      alert(response.data.message || '获取示例车辆失败')
+      console.warn('❌ API响应格式异常:', response?.data)
+      const errorMsg = response?.data?.message || '获取示例车辆失败'
+      
+      // 根据错误类型给出具体建议
+      if (errorMsg.includes('未找到符合条件的数据')) {
+        alert('当前时间段没有车辆数据，请尝试选择其他时间范围（推荐：2013-09-13 08:00 至 12:00）')
+      } else {
+        alert(errorMsg)
+      }
       sampleVehicles.value = []
     }
   } catch (error) {
-    console.error('获取示例车辆失败:', error)
-    alert('获取示例车辆失败，请检查网络连接')
+    console.error('❌ 获取示例车辆失败:', error)
+    
+    // 根据错误类型给出具体建议
+    if (error.code === 'NETWORK_ERROR' || error.message.includes('Network Error')) {
+      alert('网络连接失败，请检查网络后重试')
+    } else if (error.response?.status === 500) {
+      alert('服务器处理超时，请尝试缩短时间范围后重试')
+    } else {
+      alert('获取示例车辆失败，请稍后重试')
+    }
     sampleVehicles.value = []
   } finally {
     loadingSamples.value = false
@@ -704,17 +773,42 @@ function formatTime(timestamp) {
   return new Date(timestamp * 1000).toLocaleString('zh-CN')
 }
 
-// 生命周期
+// 生命周期 (优化版本)
 onMounted(() => {
+  console.log('TrafficTrack 组件已挂载')
   setTimeout(() => {
     initMap()
-  }, 500)
+  }, 300) // 减少延迟，使用全局管理器后更可靠
 })
 
 onUnmounted(() => {
-  if (map) {
-    map.destroy()
-  }
+  console.log('TrafficTrack 组件开始卸载')
+  
+  // 异步清理避免阻塞
+  setTimeout(() => {
+    try {
+      // 清理轨迹线和标记
+      polylines.forEach(polyline => {
+        if (map) map.remove(polyline)
+      })
+      markers.forEach(marker => {
+        if (map) map.remove(marker)
+      })
+      polylines = []
+      markers = []
+      
+      // 清理地图实例
+      if (map) {
+        map.clearMap()
+        map.destroy()
+        map = null
+      }
+      
+      console.log('TrafficTrack 组件卸载完成')
+    } catch (error) {
+      console.warn('清理TrafficTrack组件资源时出错:', error)
+    }
+  }, 0)
 })
 </script> 
 

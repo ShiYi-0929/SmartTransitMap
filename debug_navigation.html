@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>导航切换测试页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f0f2f5;
+        }
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .nav-test {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: #f9f9f9;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        button {
+            margin: 5px;
+            padding: 8px 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .console-output {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🔧 导航切换Bug修复验证</h1>
+        
+        <div class="nav-test">
+            <h3>问题描述</h3>
+            <p>用户反馈：点击二级导航到"数据总览"后，无法切换到其他页面，且显示"正在加载高德地图API"</p>
+        </div>
+
+        <div class="nav-test">
+            <h3>修复内容</h3>
+            <ul>
+                <li>✅ 创建全局地图API管理器 (<code>mapManager.js</code>)</li>
+                <li>✅ 避免重复加载高德地图API</li>
+                <li>✅ 修复组件切换时的清理逻辑</li>
+                <li>✅ 添加唯一回调函数名避免冲突</li>
+                <li>✅ 优化组件生命周期管理</li>
+                <li>✅ 添加强制重新渲染机制 (<code>:key="routeKey"</code>)</li>
+            </ul>
+        </div>
+
+        <div class="nav-test">
+            <h3>测试说明</h3>
+            <div class="status warning">
+                <strong>测试步骤：</strong>
+                <ol>
+                    <li>启动前端开发服务器：<code>npm run dev</code></li>
+                    <li>访问交通数据页面：<code>http://localhost:8082/traffic/overview</code></li>
+                    <li>切换到"数据总览"页面</li>
+                    <li>尝试切换到其他页面（轨迹查询、热力图等）</li>
+                    <li>观察是否能正常切换，无卡死现象</li>
+                    <li>检查浏览器控制台是否有错误信息</li>
+                </ol>
+            </div>
+        </div>
+
+        <div class="nav-test">
+            <h3>预期结果</h3>
+            <div class="status success">
+                <strong>修复后应该：</strong>
+                <ul>
+                    <li>✅ 页面切换流畅，无卡死现象</li>
+                    <li>✅ 地图API只加载一次</li>
+                    <li>✅ 控制台无重复加载警告</li>
+                    <li>✅ 组件正确清理，无内存泄漏</li>
+                    <li>✅ 每次切换都能正常显示内容</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="nav-test">
+            <h3>技术改进详情</h3>
+            <div class="console-output">
+# 1. 全局API管理器 (frontend/src/utils/mapManager.js)
+- 单例模式管理地图API加载状态
+- 避免多组件同时加载API冲突
+- 唯一回调函数名防止覆盖
+
+# 2. 组件优化 (TrafficMapPanel.vue)
+- 改进地图实例清理逻辑
+- 异步加载和清理避免阻塞
+- 更好的错误处理和状态管理
+
+# 3. 导航优化 (Traffic.vue) 
+- 添加 :key="routeKey" 强制重新渲染
+- 路由变化监听确保组件重新初始化
+
+# 4. 性能优化
+- 减少地图初始化延迟
+- 优化资源清理流程
+- 添加详细的日志跟踪
+            </div>
+        </div>
+
+        <div class="nav-test">
+            <h3>调试工具</h3>
+            <button onclick="checkAMapStatus()">检查地图API状态</button>
+            <button onclick="clearConsole()">清空控制台</button>
+            <button onclick="simulateNavigation()">模拟导航切换</button>
+            
+            <div id="debug-output" class="console-output" style="margin-top: 10px;">
+                控制台输出将显示在这里...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function checkAMapStatus() {
+            const output = document.getElementById('debug-output');
+            const status = {
+                hasWindow: typeof window !== 'undefined',
+                hasAMap: typeof window.AMap !== 'undefined',
+                amapVersion: window.AMap ? window.AMap.version : 'N/A',
+                timestamp: new Date().toLocaleTimeString()
+            };
+            
+            output.innerHTML = `
+🔍 地图API状态检查 [${status.timestamp}]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ Window对象: ${status.hasWindow}
+${status.hasAMap ? '✅' : '❌'} AMap对象: ${status.hasAMap}
+📦 AMap版本: ${status.amapVersion}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            `;
+        }
+        
+        function clearConsole() {
+            document.getElementById('debug-output').innerHTML = '控制台已清空...';
+        }
+        
+        function simulateNavigation() {
+            const output = document.getElementById('debug-output');
+            let step = 0;
+            const steps = [
+                '🚀 开始模拟导航切换...',
+                '📄 切换到数据总览页面',
+                '🗺️ 初始化地图组件...',
+                '🔄 切换到轨迹查询页面',
+                '🧹 清理前一个组件...',
+                '✅ 导航切换完成！'
+            ];
+            
+            const interval = setInterval(() => {
+                if (step < steps.length) {
+                    output.innerHTML += `\n[${new Date().toLocaleTimeString()}] ${steps[step]}`;
+                    step++;
+                } else {
+                    clearInterval(interval);
+                    output.innerHTML += '\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
+                }
+                output.scrollTop = output.scrollHeight;
+            }, 800);
+        }
+        
+        // 自动检查状态
+        window.onload = function() {
+            setTimeout(() => {
+                checkAMapStatus();
+            }, 1000);
+        };
+    </script>
+</body>
+</html> 

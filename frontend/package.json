@@ -10,12 +10,18 @@
     "dev": "vue-cli-service serve --open"
   },
   "dependencies": {
+    "@element-plus/icons-vue": "^2.3.1",
+    "@fortawesome/fontawesome-svg-core": "^6.7.2",
+    "@fortawesome/free-solid-svg-icons": "^6.7.2",
+    "@fortawesome/vue-fontawesome": "^3.0.8",
+    "axios": "^1.4.0",
+    "core-js": "^3.8.1",
+    "element-plus": "^2.10.3",
+    "lucide-vue-next": "^0.525.0",
+    "pinia": "^3.0.3",
     "vue": "^3.2.13",
     "vue-router": "^4.2.4",
-    "vuex": "^4.1.0",
-    "axios": "^1.4.0",
-    "lucide-vue-next": "^0.525.0",
-    "core-js": "^3.8.1"
+    "vuex": "^4.1.0"
   },
   "devDependencies": {
     "@babel/core": "^7.12.16",

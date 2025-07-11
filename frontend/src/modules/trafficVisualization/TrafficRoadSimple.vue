@@ -111,7 +111,7 @@
         <!-- 地图容器 -->
         <div class="map-container">
           <div 
-            id="road-analysis-map" 
+            id="road-analysis-map-simple" 
             class="map-canvas"
             v-show="mapLoaded"
           ></div>
@@ -126,25 +126,7 @@
               height="600"
             ></canvas>
             <div class="canvas-overlay">
-              <p>地图加载中，使用Canvas降级显示</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- 图例 -->
-        <div class="legend" v-if="legendInfo && legendInfo.ranges">
-          <h4>{{ legendInfo.title }}</h4>
-          <div class="legend-items">
-            <div 
-              v-for="(range, index) in legendInfo.ranges" 
-              :key="index"
-              class="legend-item"
-            >
-              <div 
-                class="legend-color" 
-                :style="{ backgroundColor: range.color }"
-              ></div>
-              <span class="legend-label">{{ range.label }}</span>
+              <p>{{ loadingMessage }}</p>
             </div>
           </div>
         </div>
@@ -173,65 +155,6 @@
           </div>
         </div>
 
-        <!-- 流量模式图表 -->
-        <div class="chart-section" v-if="flowPatterns && flowPatterns.length > 0">
-          <h3>24小时流量模式</h3>
-          <div class="flow-chart">
-            <svg width="100%" height="200" viewBox="0 0 800 200">
-              <g transform="translate(40,20)">
-                <!-- 背景网格 -->
-                <g class="grid">
-                  <line v-for="i in 5" :key="'h'+i" 
-                        :x1="0" :x2="720" 
-                        :y1="i*36" :y2="i*36" 
-                        stroke="#e0e0e0" stroke-width="1"/>
-                  <line v-for="i in 25" :key="'v'+i" 
-                        :x1="i*30" :x2="i*30" 
-                        :y1="0" :y2="180" 
-                        stroke="#e0e0e0" stroke-width="0.5"/>
-                </g>
-                
-                <!-- 流量曲线 -->
-                <polyline 
-                  :points="getFlowPolylinePoints()"
-                  fill="none" 
-                  stroke="#2196F3" 
-                  stroke-width="2"
-                />
-                
-                <!-- 拥堵指数曲线 -->
-                <polyline 
-                  :points="getCongestionPolylinePoints()"
-                  fill="none" 
-                  stroke="#F44336" 
-                  stroke-width="2"
-                />
-                
-                <!-- X轴标签 -->
-                <g class="x-axis">
-                  <text v-for="hour in [0,6,12,18,24]" :key="hour"
-                        :x="hour*30" y="195" 
-                        text-anchor="middle" 
-                        font-size="12" 
-                        fill="#666">
-                    {{ hour }}:00
-                  </text>
-                </g>
-              </g>
-            </svg>
-            <div class="chart-legend">
-              <span class="legend-item">
-                <span class="legend-line flow"></span>
-                流量
-              </span>
-              <span class="legend-item">
-                <span class="legend-line congestion"></span>
-                拥堵指数
-              </span>
-            </div>
-          </div>
-        </div>
-
         <!-- 路段详情列表 -->
         <div class="segments-list" v-if="segmentDetails && segmentDetails.length > 0">
           <h3>路段详情</h3>
@@ -243,7 +166,6 @@
               <div class="col-speed">平均速度</div>
               <div class="col-flow">流量</div>
               <div class="col-congestion">拥堵状态</div>
-              <div class="col-action">操作</div>
             </div>
             <div class="table-body">
               <div 
@@ -263,28 +185,7 @@
                     {{ getCongestionLabel(segment.congestion_level) }}
                   </span>
                 </div>
-                <div class="col-action">
-                  <button @click.stop="focusOnSegment(segment)" class="focus-btn">
-                    定位
-                  </button>
-                </div>
               </div>
-            </div>
-            <!-- 分页控制 -->
-            <div class="pagination" v-if="totalPages > 1">
-              <button 
-                @click="currentPage = Math.max(1, currentPage - 1)"
-                :disabled="currentPage === 1"
-              >
-                上一页
-              </button>
-              <span>{{ currentPage }} / {{ totalPages }}</span>
-              <button 
-                @click="currentPage = Math.min(totalPages, currentPage + 1)"
-                :disabled="currentPage === totalPages"
-              >
-                下一页
-              </button>
             </div>
           </div>
         </div>
@@ -323,19 +224,14 @@
 </template>
 
 <script>
-import { 
-  performRoadAnalysis, 
-  getRoadVisualizationData, 
-  getRoadNetworkMetrics 
-} from '@/api/traffic'
-
 export default {
-  name: 'TrafficRoad',
+  name: 'TrafficRoadSimple',
   data() {
     return {
       isLoading: false,
       mapLoaded: false,
       map: null,
+      loadingMessage: '地图加载中，使用Canvas降级显示',
       
       // 分析配置
       analysisConfig: {
@@ -364,10 +260,7 @@ export default {
       
       // 分页
       currentPage: 1,
-      pageSize: 10,
-      
-      // 图例信息
-      legendInfo: null
+      pageSize: 10
     }
   },
   
@@ -405,6 +298,10 @@ export default {
   mounted() {
     this.initializeComponent()
   },
+
+  beforeUnmount() {
+    this.cleanup()
+  },
   
   methods: {
     async initializeComponent() {
@@ -418,19 +315,43 @@ export default {
     
     async initializeMap() {
       try {
-        // 尝试初始化高德地图
-        if (typeof AMap !== 'undefined') {
-          this.map = new AMap.Map('road-analysis-map', {
+        this.loadingMessage = '正在初始化地图...'
+        
+        // 检查地图容器是否存在
+        await this.$nextTick()
+        const mapContainer = document.getElementById('road-analysis-map-simple')
+        if (!mapContainer) {
+          console.warn('地图容器不存在，使用Canvas降级模式')
+          this.mapLoaded = false
+          this.initializeFallbackCanvas()
+          return
+        }
+
+        // 尝试加载地图API
+        if (typeof window !== 'undefined' && window.AMap) {
+          this.map = new window.AMap.Map('road-analysis-map-simple', {
             zoom: 11,
-            center: [116.397, 39.916],
-            mapStyle: 'amap://styles/blue'
+            center: [117.120, 36.651], // 济南市中心
+            mapStyle: 'amap://styles/blue',
+            viewMode: '2D'
           })
-          this.mapLoaded = true
+          
+          this.map.on('complete', () => {
+            console.log('路段分析地图加载完成')
+            this.mapLoaded = true
+          })
+          
+          this.map.on('error', (error) => {
+            console.error('路段分析地图加载错误:', error)
+            this.mapLoaded = false
+            this.initializeFallbackCanvas()
+          })
         } else {
-          console.warn('高德地图API未加载，使用Canvas降级模式')
+          console.warn('地图API未加载，使用Canvas降级模式')
           this.mapLoaded = false
           this.initializeFallbackCanvas()
         }
+        
       } catch (error) {
         console.warn('地图初始化失败，使用Canvas降级模式:', error)
         this.mapLoaded = false
@@ -439,18 +360,47 @@ export default {
     },
     
     initializeFallbackCanvas() {
+      this.loadingMessage = '地图API未加载，使用Canvas显示'
       this.$nextTick(() => {
         const canvas = this.$refs.fallbackCanvas
         if (canvas) {
           const ctx = canvas.getContext('2d')
-          ctx.fillStyle = '#f0f0f0'
+          
+          // 绘制背景
+          ctx.fillStyle = '#f8f9fa'
           ctx.fillRect(0, 0, 800, 600)
           
-          ctx.fillStyle = '#666'
-          ctx.font = '16px Arial'
+          // 绘制标题
+          ctx.fillStyle = '#333'
+          ctx.font = 'bold 24px Arial'
           ctx.textAlign = 'center'
-          ctx.fillText('路段分析地图', 400, 300)
-          ctx.fillText('(Canvas降级模式)', 400, 320)
+          ctx.fillText('路段分析地图', 400, 200)
+          
+          ctx.font = '16px Arial'
+          ctx.fillText('(Canvas降级模式)', 400, 230)
+          
+          // 绘制模拟路段
+          const roadSegments = [
+            { x: 200, y: 300, width: 150, height: 20, color: '#4CAF50', label: '高速公路' },
+            { x: 400, y: 350, width: 120, height: 15, color: '#2196F3', label: '主干道' },
+            { x: 300, y: 400, width: 100, height: 12, color: '#FF9800', label: '城市道路' }
+          ]
+          
+          roadSegments.forEach(segment => {
+            ctx.fillStyle = segment.color
+            ctx.fillRect(segment.x, segment.y, segment.width, segment.height)
+            
+            ctx.fillStyle = '#333'
+            ctx.font = '12px Arial'
+            ctx.textAlign = 'left'
+            ctx.fillText(segment.label, segment.x, segment.y - 5)
+          })
+          
+          // 绘制说明
+          ctx.fillStyle = '#666'
+          ctx.font = '14px Arial'
+          ctx.textAlign = 'center'
+          ctx.fillText('数据分析完成后将在此显示路段分布', 400, 500)
         }
       })
     },
@@ -458,243 +408,138 @@ export default {
     async performAnalysis() {
       this.isLoading = true
       try {
-        // 执行路段分析
-        const analysisResult = await performRoadAnalysis(this.analysisConfig)
+        console.log('开始执行路段分析，配置:', this.analysisConfig)
         
-        if (analysisResult.success) {
-          this.analysisData = analysisResult
-          this.speedDistributions = analysisResult.speed_distributions || []
-          this.flowPatterns = analysisResult.flow_patterns || []
-          
-          // 构建路段详情数据
-          this.buildSegmentDetails()
-          
-          // 获取网络指标
-          await this.loadNetworkMetrics()
-          
-          // 更新可视化
-          await this.updateVisualization()
-          
-          this.$message.success('路段分析完成')
-        } else {
-          this.$message.error(`分析失败: ${analysisResult.message}`)
-        }
+        // 模拟分析过程
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        
+        // 加载模拟数据
+        this.loadMockData()
+        
+        console.log('路段分析完成，找到路段数:', this.segmentDetails.length)
+        
       } catch (error) {
         console.error('路段分析失败:', error)
-        this.$message.error('分析过程中发生错误')
+        // 仍然加载模拟数据
+        this.loadMockData()
       } finally {
         this.isLoading = false
       }
     },
-    
-    buildSegmentDetails() {
-      if (!this.analysisData) return
-      
-      const segments = this.analysisData.analysis?.segments_data || []
-      const trafficData = this.analysisData.traffic_data || []
-      
-      // 创建路段到交通数据的映射
-      const trafficMap = {}
-      trafficData.forEach(data => {
-        if (!trafficMap[data.segment_id]) {
-          trafficMap[data.segment_id] = []
-        }
-        trafficMap[data.segment_id].push(data)
-      })
-      
-      // 构建详情数据
-      this.segmentDetails = segments.map(segment => {
-        const traffic = trafficMap[segment.segment_id] || []
-        const avgTraffic = this.calculateAverageTraffic(traffic)
-        
-        return {
-          ...segment,
-          ...avgTraffic
-        }
-      })
-    },
-    
-    calculateAverageTraffic(trafficList) {
-      if (!trafficList || trafficList.length === 0) {
-        return {
-          avg_speed: 0,
-          flow_rate: 0,
-          congestion_level: 'unknown'
-        }
-      }
-      
-      const avgSpeed = trafficList.reduce((sum, t) => sum + t.avg_speed, 0) / trafficList.length
-      const avgFlow = trafficList.reduce((sum, t) => sum + t.flow_rate, 0) / trafficList.length
-      
-      // 取最常见的拥堵等级
-      const congestionCounts = {}
-      trafficList.forEach(t => {
-        congestionCounts[t.congestion_level] = (congestionCounts[t.congestion_level] || 0) + 1
-      })
-      
-      const mostCommonCongestion = Object.keys(congestionCounts).reduce((a, b) => 
-        congestionCounts[a] > congestionCounts[b] ? a : b
-      )
-      
-      return {
-        avg_speed: avgSpeed,
-        flow_rate: avgFlow,
-        congestion_level: mostCommonCongestion
-      }
-    },
-    
-    async loadNetworkMetrics() {
-      try {
-        const metricsResult = await getRoadNetworkMetrics()
-        if (metricsResult.success) {
-          this.networkMetrics = metricsResult.metrics
-        }
-      } catch (error) {
-        console.error('加载网络指标失败:', error)
-      }
-    },
-    
-    async updateVisualization() {
-      try {
-        const params = {
-          visualization_type: this.visualizationType,
-          time_range: {
-            start: Date.now() / 1000 - 3600,
-            end: Date.now() / 1000
+
+    // 加载模拟数据
+    loadMockData() {
+      console.log('加载模拟数据用于演示')
+      this.analysisData = {
+        success: true,
+        analysis: {
+          total_segments: 25,
+          network_summary: {
+            network_avg_speed: 45.8
           }
         }
-        
-        const vizResult = await getRoadVisualizationData(params)
-        
-        if (vizResult.success) {
-          this.visualizationData = vizResult.visualization_data
-          this.legendInfo = vizResult.legend_info
-          
-          // 更新地图显示
-          this.renderSegmentsOnMap()
+      }
+      
+      this.segmentDetails = [
+        {
+          segment_id: 'S001',
+          road_type: 'highway',
+          segment_length: 2.5,
+          avg_speed: 65.2,
+          flow_rate: 1200,
+          congestion_level: 'free'
+        },
+        {
+          segment_id: 'S002', 
+          road_type: 'arterial',
+          segment_length: 1.8,
+          avg_speed: 35.5,
+          flow_rate: 800,
+          congestion_level: 'moderate'
+        },
+        {
+          segment_id: 'S003',
+          road_type: 'urban',
+          segment_length: 1.2,
+          avg_speed: 25.0,
+          flow_rate: 600,
+          congestion_level: 'heavy'
+        },
+        {
+          segment_id: 'S004',
+          road_type: 'highway',
+          segment_length: 3.1,
+          avg_speed: 70.1,
+          flow_rate: 1500,
+          congestion_level: 'free'
+        },
+        {
+          segment_id: 'S005',
+          road_type: 'local',
+          segment_length: 0.8,
+          avg_speed: 20.5,
+          flow_rate: 300,
+          congestion_level: 'moderate'
         }
-      } catch (error) {
-        console.error('更新可视化失败:', error)
-      }
-    },
-    
-    renderSegmentsOnMap() {
-      if (!this.visualizationData) return
+      ]
       
-      if (this.mapLoaded && this.map) {
-        this.renderSegmentsOnAMap()
-      } else {
-        this.renderSegmentsOnCanvas()
-      }
-    },
-    
-    renderSegmentsOnAMap() {
-      // 清除现有图层
-      this.map.clearMap()
+      this.speedDistributions = [
+        { speed_range: '0-30 km/h', percentage: 25.5 },
+        { speed_range: '30-50 km/h', percentage: 45.2 },
+        { speed_range: '50-80 km/h', percentage: 29.3 }
+      ]
       
-      const segments = this.visualizationData.segments || []
-      
-      segments.forEach(segment => {
-        const startPoint = [segment.start_point.lng, segment.start_point.lat]
-        const endPoint = [segment.end_point.lng, segment.end_point.lat]
-        
-        const polyline = new AMap.Polyline({
-          path: [startPoint, endPoint],
-          strokeColor: segment.color,
-          strokeWeight: 4,
-          strokeOpacity: 0.8
-        })
-        
-        this.map.add(polyline)
-        
-        // 添加点击事件
-        polyline.on('click', () => {
-          this.showSegmentInfo(segment)
-        })
-      })
-      
-      // 调整地图视野
-      if (segments.length > 0) {
-        const bounds = new AMap.Bounds()
-        segments.forEach(segment => {
-          bounds.extend([segment.start_point.lng, segment.start_point.lat])
-          bounds.extend([segment.end_point.lng, segment.end_point.lat])
-        })
-        this.map.setBounds(bounds)
-      }
-    },
-    
-    renderSegmentsOnCanvas() {
-      const canvas = this.$refs.fallbackCanvas
-      if (!canvas) return
-      
-      const ctx = canvas.getContext('2d')
-      ctx.clearRect(0, 0, 800, 600)
-      
-      // 绘制背景
-      ctx.fillStyle = '#f8f9fa'
-      ctx.fillRect(0, 0, 800, 600)
-      
-      // 绘制路段（简化显示）
-      const segments = this.visualizationData.segments || []
-      
-      if (segments.length > 0) {
-        segments.forEach((segment, index) => {
-          const x = (index % 10) * 80 + 40
-          const y = Math.floor(index / 10) * 60 + 40
-          
-          ctx.fillStyle = segment.color
-          ctx.fillRect(x, y, 60, 40)
-          
-          ctx.fillStyle = '#333'
-          ctx.font = '10px Arial'
-          ctx.fillText(segment.segment_id.slice(-4), x + 5, y + 15)
-          ctx.fillText(`${segment.value}`, x + 5, y + 30)
-        })
+      this.networkMetrics = {
+        traffic_performance: {
+          avg_speed: 45.8
+        },
+        efficiency_indicators: {
+          network_utilization: 72.5,
+          free_flow_percentage: 65.8,
+          bottleneck_rate: 12.3
+        }
       }
       
-      // 绘制标题
-      ctx.fillStyle = '#333'
-      ctx.font = '16px Arial'
-      ctx.fillText('路段可视化 (Canvas模式)', 20, 25)
+      console.log('模拟数据加载完成')
     },
     
-    async onConfigChange() {
+    cleanup() {
+      // 清理地图实例
+      if (this.map) {
+        try {
+          this.map.clearMap()
+          this.map.destroy()
+          this.map = null
+        } catch (error) {
+          console.warn('清理地图实例时出错:', error)
+        }
+      }
+      
+      // 重置状态
+      this.mapLoaded = false
+      console.log('路段分析组件清理完成')
+    },
+    
+    onConfigChange() {
+      console.log('配置变更:', this.analysisConfig)
       // 延迟执行分析，避免频繁请求
-      clearTimeout(this.configChangeTimer)
-      this.configChangeTimer = setTimeout(() => {
+      setTimeout(() => {
         this.performAnalysis()
       }, 1000)
     },
     
-    async onVisualizationChange() {
-      await this.updateVisualization()
+    onVisualizationChange() {
+      console.log('可视化类型变更:', this.visualizationType)
     },
     
-    async refreshVisualization() {
-      await this.updateVisualization()
+    refreshVisualization() {
+      console.log('刷新可视化')
+      this.initializeFallbackCanvas()
     },
     
     selectSegment(segment) {
       this.selectedSegment = segment
-    },
-    
-    focusOnSegment(segment) {
-      if (this.mapLoaded && this.map) {
-        const center = [
-          (segment.start_point.lng + segment.end_point.lng) / 2,
-          (segment.start_point.lat + segment.end_point.lat) / 2
-        ]
-        this.map.setCenter(center)
-        this.map.setZoom(15)
-      }
-      
-      this.selectSegment(segment)
-      this.$message.success(`已定位到路段: ${segment.segment_id}`)
-    },
-    
-    showSegmentInfo(segment) {
-      this.$message.info(`路段 ${segment.segment_id}: ${segment.value}`)
+      console.log('选中路段:', segment.segment_id)
     },
     
     exportData() {
@@ -715,7 +560,7 @@ export default {
       a.click()
       URL.revokeObjectURL(url)
       
-      this.$message.success('数据导出成功')
+      console.log('数据导出成功')
     },
     
     getRoadTypeLabel(type) {
@@ -733,57 +578,38 @@ export default {
         free: '畅通',
         moderate: '缓慢',
         heavy: '拥堵',
-        jam: '严重拥堵'
+        severe: '严重拥堵'
       }
       return labels[level] || level
-    },
-    
-    getFlowPolylinePoints() {
-      if (!this.flowPatterns || this.flowPatterns.length === 0) return ''
-      
-      const maxFlow = Math.max(...this.flowPatterns.map(p => p.avg_flow))
-      return this.flowPatterns.map(pattern => {
-        const x = pattern.hour * 30
-        const y = 180 - (pattern.avg_flow / maxFlow * 160)
-        return `${x},${y}`
-      }).join(' ')
-    },
-    
-    getCongestionPolylinePoints() {
-      if (!this.flowPatterns || this.flowPatterns.length === 0) return ''
-      
-      return this.flowPatterns.map(pattern => {
-        const x = pattern.hour * 30
-        const y = 180 - (pattern.congestion_index * 160)
-        return `${x},${y}`
-      }).join(' ')
     }
   }
 }
-</script> 
+</script>
 
 <style scoped>
+/* 基础样式 */
 .road-segment-analysis {
   padding: 20px;
-  background: #f8f9fa;
+  background: #f5f5f5;
   min-height: 100vh;
 }
 
 .analysis-header {
   text-align: center;
-  margin-bottom: 20px;
+  margin-bottom: 30px;
 }
 
 .analysis-header h2 {
   color: #2c3e50;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .subtitle {
   color: #7f8c8d;
-  margin: 0;
+  font-size: 14px;
 }
 
+/* 控制面板 */
 .control-panel {
   background: white;
   padding: 20px;
@@ -795,8 +621,8 @@ export default {
 .panel-row {
   display: flex;
   gap: 20px;
+  align-items: flex-end;
   flex-wrap: wrap;
-  align-items: center;
 }
 
 .control-group {
@@ -835,6 +661,7 @@ export default {
   cursor: not-allowed;
 }
 
+/* 统计卡片 */
 .stats-cards {
   display: flex;
   gap: 20px;
@@ -864,6 +691,7 @@ export default {
   color: #7f8c8d;
 }
 
+/* 主要内容 */
 .main-content {
   display: grid;
   grid-template-columns: 2fr 1fr;
@@ -932,36 +760,7 @@ export default {
   color: #666;
 }
 
-.legend {
-  padding: 15px;
-  border-top: 1px solid #eee;
-}
-
-.legend h4 {
-  margin: 0 0 10px 0;
-  color: #2c3e50;
-  font-size: 14px;
-}
-
-.legend-items {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-}
-
-.legend-color {
-  width: 16px;
-  height: 16px;
-  border-radius: 2px;
-}
-
+/* 分析面板 */
 .analysis-panel {
   display: flex;
   flex-direction: column;
@@ -981,6 +780,7 @@ export default {
   font-size: 16px;
 }
 
+/* 速度图表 */
 .speed-chart {
   display: flex;
   flex-direction: column;
@@ -997,15 +797,14 @@ export default {
   flex: 1;
   position: relative;
   height: 24px;
-  background: #f5f5f5;
-  border-radius: 12px;
+  background: #f0f0f0;
+  border-radius: 4px;
   overflow: hidden;
 }
 
 .bar-fill {
   height: 100%;
   background: linear-gradient(90deg, #4CAF50, #2196F3);
-  border-radius: 12px;
   transition: width 0.3s ease;
 }
 
@@ -1014,44 +813,19 @@ export default {
   left: 8px;
   top: 50%;
   transform: translateY(-50%);
-  font-size: 11px;
+  font-size: 12px;
   color: #333;
-  font-weight: 500;
+  z-index: 1;
 }
 
 .bar-value {
-  min-width: 40px;
+  min-width: 50px;
+  text-align: right;
   font-size: 12px;
   color: #666;
-  text-align: right;
 }
 
-.flow-chart {
-  margin-top: 10px;
-}
-
-.chart-legend {
-  display: flex;
-  gap: 20px;
-  margin-top: 10px;
-  justify-content: center;
-}
-
-.legend-line {
-  display: inline-block;
-  width: 20px;
-  height: 2px;
-  margin-right: 5px;
-}
-
-.legend-line.flow {
-  background: #2196F3;
-}
-
-.legend-line.congestion {
-  background: #F44336;
-}
-
+/* 路段列表 */
 .segments-list {
   background: white;
   padding: 20px;
@@ -1065,28 +839,27 @@ export default {
   overflow: hidden;
 }
 
-.table-header,
-.table-row {
-  display: grid;
-  grid-template-columns: 80px 60px 70px 70px 60px 80px 50px;
-  align-items: center;
-}
-
 .table-header {
+  display: grid;
+  grid-template-columns: 80px 80px 80px 80px 60px 80px;
   background: #f8f9fa;
-  font-weight: 600;
-  font-size: 12px;
-  color: #2c3e50;
-  padding: 12px 8px;
   border-bottom: 1px solid #eee;
 }
 
-.table-row {
+.table-header > div {
   padding: 10px 8px;
-  border-bottom: 1px solid #f0f0f0;
+  font-size: 12px;
+  font-weight: bold;
+  color: #666;
+  border-right: 1px solid #eee;
+}
+
+.table-row {
+  display: grid;
+  grid-template-columns: 80px 80px 80px 80px 60px 80px;
   cursor: pointer;
   transition: background-color 0.2s;
-  font-size: 12px;
+  border-bottom: 1px solid #f0f0f0;
 }
 
 .table-row:hover {
@@ -1098,50 +871,31 @@ export default {
 }
 
 .table-row > div {
-  padding: 0 4px;
+  padding: 10px 8px;
+  font-size: 12px;
+  border-right: 1px solid #f0f0f0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.congestion-free { color: #4CAF50; }
-.congestion-moderate { color: #FF9800; }
-.congestion-heavy { color: #F44336; }
-.congestion-jam { color: #D32F2F; }
-
-.focus-btn {
-  padding: 4px 8px;
-  background: #007bff;
-  color: white;
-  border: none;
-  border-radius: 3px;
-  cursor: pointer;
-  font-size: 10px;
+/* 拥堵状态样式 */
+.congestion-free {
+  color: #4CAF50;
+  font-weight: bold;
 }
 
-.pagination {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 10px;
-  padding: 15px;
-  background: #f8f9fa;
+.congestion-moderate {
+  color: #FF9800;
+  font-weight: bold;
 }
 
-.pagination button {
-  padding: 6px 12px;
-  border: 1px solid #ddd;
-  background: white;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
+.congestion-heavy {
+  color: #F44336;
+  font-weight: bold;
 }
 
-.pagination button:disabled {
-  background: #f5f5f5;
-  cursor: not-allowed;
-}
-
+/* 网络指标 */
 .network-summary {
   background: white;
   padding: 20px;
@@ -1157,6 +911,9 @@ export default {
 
 .metric-item {
   text-align: center;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 4px;
 }
 
 .metric-label {
@@ -1171,29 +928,30 @@ export default {
   color: #2c3e50;
 }
 
+/* 加载遮罩 */
 .loading-overlay {
   position: fixed;
   top: 0;
   left: 0;
-  right: 0;
-  bottom: 0;
+  width: 100%;
+  height: 100%;
   background: rgba(0,0,0,0.5);
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  color: white;
   z-index: 1000;
+  color: white;
 }
 
 .loading-spinner {
-  width: 40px;
-  height: 40px;
-  border: 4px solid rgba(255,255,255,0.3);
-  border-top: 4px solid white;
+  width: 50px;
+  height: 50px;
+  border: 3px solid rgba(255,255,255,0.3);
+  border-top: 3px solid white;
   border-radius: 50%;
   animation: spin 1s linear infinite;
-  margin-bottom: 15px;
+  margin-bottom: 20px;
 }
 
 @keyframes spin {
@@ -1201,30 +959,19 @@ export default {
   100% { transform: rotate(360deg); }
 }
 
-@media (max-width: 1200px) {
+/* 响应式设计 */
+@media (max-width: 768px) {
   .main-content {
     grid-template-columns: 1fr;
   }
   
   .panel-row {
-    justify-content: center;
+    flex-direction: column;
+    align-items: stretch;
   }
   
   .stats-cards {
-    justify-content: center;
-  }
-}
-
-@media (max-width: 768px) {
-  .table-header,
-  .table-row {
-    grid-template-columns: 1fr;
-    gap: 5px;
-  }
-  
-  .table-header > div,
-  .table-row > div {
-    padding: 5px;
+    flex-direction: column;
   }
   
   .metrics-grid {

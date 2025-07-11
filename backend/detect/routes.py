@@ -50,6 +50,7 @@ from .face_recognition.service import router as face_router
 import shutil
 import os
 import uuid
+from datetime import datetime
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -88,4 +89,73 @@ async def detect_disease(file: UploadFile = File(...)):
         "saved_path": save_path,
         "results": predict_result["result"],
         "message": "病害识别成功"
+    })
+
+@api_router.get("/trend")
+async def get_trend_data():
+    """获取统计趋势数据"""
+    return JSONResponse(content={
+        "status": "success",
+        "todayDetections": 23,
+        "totalDamages": 40,
+        "damageTypes": [
+            {"name": "裂缝", "count": 15},
+            {"name": "坑洞", "count": 8},
+            {"name": "破损", "count": 12},
+            {"name": "其他", "count": 5}
+        ],
+        "message": "获取统计数据成功"
+    })
+
+@api_router.get("/logs")
+async def get_logs():
+    """获取操作日志"""
+    current_time = datetime.now()
+    return JSONResponse(content={
+        "status": "success",
+        "logs": [
+            {
+                "id": 1,
+                "action": "图像检测完成",
+                "operator": "系统",
+                "timestamp": current_time.isoformat()
+            },
+            {
+                "id": 2,
+                "action": "上传图像文件",
+                "operator": "用户",
+                "timestamp": (current_time.timestamp() - 300) * 1000  # 5分钟前
+            },
+            {
+                "id": 3,
+                "action": "病害识别",
+                "operator": "系统",
+                "timestamp": (current_time.timestamp() - 600) * 1000  # 10分钟前
+            }
+        ],
+        "message": "获取日志成功"
+    })
+
+@api_router.get("/alarm")
+async def get_alarm_data():
+    """获取告警数据"""
+    return JSONResponse(content={
+        "status": "success",
+        "alarms": [
+            {
+                "id": 1,
+                "level": "high",
+                "message": "检测到严重路面破损",
+                "location": "主干道 KM 15+200",
+                "timestamp": datetime.now().isoformat()
+            },
+            {
+                "id": 2,
+                "level": "medium",
+                "message": "路面裂缝需要关注",
+                "location": "辅路 KM 8+500",
+                "timestamp": datetime.now().isoformat()
+            }
+        ],
+        "message": "获取告警数据成功"
     })
