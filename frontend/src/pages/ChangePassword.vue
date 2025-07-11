@@ -76,6 +76,7 @@
 
 <script>
 import { getUserProfile, sendVerificationCode, changePassword } from "@/api/user";
+import { ElNotification } from 'element-plus'; // Import ElNotification
 
 export default {
   name: "ChangePassword",
@@ -101,22 +102,27 @@ export default {
     fetchUserEmail() {
       getUserProfile()
         .then((response) => {
-          this.userEmail = response.data.email;
+          // Correctly access email from the response object itself
+          this.userEmail = response.email;
         })
         .catch((error) => {
           console.error("获取用户邮箱失败:", error);
-          alert("无法获取用户信息，请确保您已登录。");
+          ElNotification({
+            title: '错误',
+            message: '无法获取用户信息，请确保您已登录。',
+            type: 'error'
+          });
           this.$router.push("/");
         });
     },
     sendCode() {
       if (!this.userEmail) {
-        alert("用户邮箱未加载，无法发送验证码。");
+        ElNotification({ title: '提示', message: '用户邮箱未加载，无法发送验证码。', type: 'info' });
         return;
       }
       sendVerificationCode(this.userEmail)
-        .then(() => {
-          alert("验证码已发送至您的邮箱，请注意查收。");
+        .then((response) => {
+          ElNotification({ title: '成功', message: response.message || '验证码已发送至您的邮箱，请注意查收。', type: 'success' });
           this.countdown = 60;
           const interval = setInterval(() => {
             this.countdown--;
@@ -127,7 +133,8 @@ export default {
         })
         .catch((error) => {
           console.error("发送验证码失败:", error);
-          alert(error.response?.data?.detail || "发送验证码失败，请稍后重试。");
+          const detail = error.response?.data?.detail || "发送验证码失败，请稍后重试。";
+          ElNotification({ title: '错误', message: detail, type: 'error' });
         });
     },
     toggleVisibility(field) {
@@ -135,11 +142,11 @@ export default {
     },
     submitChange() {
       if (this.passwords.newPassword !== this.passwords.confirmPassword) {
-        alert("两次输入的新密码不一致！");
+        ElNotification({ title: '错误', message: '两次输入的新密码不一致！', type: 'error' });
         return;
       }
       if (!this.passwords.oldPassword || !this.passwords.newPassword || !this.captcha) {
-        alert("请填写所有字段！");
+        ElNotification({ title: '错误', message: '请填写所有字段！', type: 'error' });
         return;
       }
 
@@ -150,14 +157,19 @@ export default {
       };
 
       changePassword(payload)
-        .then(() => {
-          alert("密码修改成功！为了您的账户安全，请使用新密码重新登录。");
+        .then((response) => {
+          ElNotification({
+            title: '成功',
+            message: response.message || '密码修改成功！为了您的账户安全，请使用新密码重新登录。',
+            type: 'success'
+          });
           localStorage.removeItem("user-token");
           this.$router.push("/");
         })
         .catch((error) => {
           console.error("密码修改失败:", error);
-          alert(error.response?.data?.detail || "密码修改失败，请检查您的输入。");
+          const detail = error.response?.data?.detail || "密码修改失败，请检查您的输入。";
+          ElNotification({ title: '错误', message: detail, type: 'error' });
         });
     },
   },

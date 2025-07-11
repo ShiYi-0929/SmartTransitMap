@@ -90,10 +90,10 @@
             <template #fields>
               <div class="form-group">
                 <div class="input-container">
-                  <i class="fa fa-phone"></i>
+                  <i class="fa fa-envelope"></i>
                   <input
                     type="text"
-                    v-model="account"
+                    v-model="email"
                     placeholder="邮箱"
                     class="input-field"
                   />
@@ -102,12 +102,12 @@
               <div class="form-group captcha-group">
                 <input
                   type="text"
-                  v-model="captchaInput"
-                  placeholder="请输入验证码"
+                  v-model="verificationCode"
+                  placeholder="请输入邮箱验证码"
                   class="input-field captcha-input-field"
                 />
                 <button
-                  :disabled="countdown > 0 || !account"
+                  :disabled="countdown > 0 || !email"
                   @click="getCaptcha"
                   class="get-captcha-btn"
                 >
@@ -116,7 +116,7 @@
               </div>
             </template>
             <template #actions>
-              <button @click="handleCaptchaLogin" :disabled="!account || !captchaInput">
+              <button @click="handleCaptchaLogin" :disabled="!email || !verificationCode">
                 登录
               </button>
               <div class="extra-options">
@@ -288,40 +288,12 @@
                 <span @click="navigateTo('login')" class="link-style">返回登录</span>
               </div>
             </template>
-            <template #actions>
-              <div class="reset-options">
-                <button @click="navigateTo('find-password-by-email')">
-                  <i class="fa fa-envelope"></i>
-                  <span>邮箱找回</span>
-                </button>
-              </div>
-            </template>
-          </AuthForm>
-        </div>
-      </div>
-    </div>
-
-    <!-- FindPasswordByEmail View -->
-    <div v-if="currentView === 'find-password-by-email'">
-      <div class="auth-page" :style="authPageStyle('bg5')">
-        <AuthNavbar />
-        <div class="auth-content">
-          <AuthSlide :images="slideImages" />
-          <AuthForm>
-            <template #title>
-              <div class="title-container">
-                <h2>邮箱找回密码</h2>
-                <span @click="navigateTo('find-password')" class="link-style"
-                  >返回选择</span
-                >
-              </div>
-            </template>
             <template #fields>
               <div class="form-group">
                 <div class="input-container">
                   <i class="fa fa-envelope"></i>
                   <input
-                    type="text"
+                    type="email"
                     v-model="email"
                     placeholder="请输入注册邮箱"
                     class="input-field"
@@ -332,7 +304,7 @@
                 <input
                   type="text"
                   v-model="captchaInput"
-                  placeholder="请输入验证码"
+                  placeholder="请输入邮箱验证码"
                   class="input-field captcha-input-field"
                 />
                 <button
@@ -365,7 +337,7 @@
                   <input
                     :type="confirmNewPasswordVisible ? 'text' : 'password'"
                     v-model="confirmNewPassword"
-                    placeholder="请确认新密码"
+                    placeholder="请再次输入新密码"
                     class="input-field"
                   />
                   <i
@@ -377,7 +349,12 @@
               </div>
             </template>
             <template #actions>
-              <button @click="resetPasswordByEmail">确认重置</button>
+              <button
+                @click="handleResetPassword"
+                :disabled="!isFindPasswordByEmailFormValid"
+              >
+                确认重置
+              </button>
             </template>
           </AuthForm>
         </div>
@@ -500,16 +477,16 @@
 </template>
 
 <script>
-import { ElNotification } from 'element-plus';
+import { ElNotification } from "element-plus";
 import AuthNavbar from "@/components/AuthNavbar.vue";
 import AuthForm from "@/components/AuthForm.vue";
 import AuthFooter from "@/components/AuthFooter.vue";
 import AuthSlide from "@/components/AuthSlide.vue"; // Assuming AuthSlide component exists
 import {
-  sendVerificationCode,
-  verifyCode,
   login,
+  loginByCode,
   register,
+  sendVerificationCode,
   resetPassword,
   getUserProfile,
 } from "@/api/user.js";
@@ -555,6 +532,7 @@ export default {
       agreeTerms: false,
       // 找回密码相关数据
       email: "",
+      verificationCode: "", // Add this for captcha login
       newPassword: "",
       newPasswordVisible: false,
       confirmNewPassword: "",
@@ -635,6 +613,7 @@ export default {
       this.account = "";
       this.agreeTerms = false;
       this.email = "";
+      this.verificationCode = ""; // Reset captcha login fields
       this.newPassword = "";
       this.newPasswordVisible = false;
       this.confirmNewPassword = "";
@@ -708,7 +687,7 @@ export default {
     // 验证验证码
     validateCaptcha() {
       if (this.captchaInput !== this.generatedCaptchaText) {
-        ElNotification({ title: '错误', message: '验证码不正确!', type: 'error' });
+        ElNotification({ title: "错误", message: "验证码不正确!", type: "error" });
         this.generateCaptcha();
         this.captchaInput = "";
         return false;
@@ -724,11 +703,11 @@ export default {
       let targetAccount = "";
       let isEmail = false;
 
-      // 确定目标账户和类型
-      if (this.currentView === "captcha-login" || this.currentView === "bind-account") {
-        targetAccount = this.account;
-      } else if (this.currentView === "find-password-by-email") {
+      // 确定目标账户和类型 - 已修正逻辑
+      if (this.currentView === "captcha-login" || this.currentView === "find-password") {
         targetAccount = this.email;
+      } else if (this.currentView === "bind-account") {
+        targetAccount = this.account;
       }
 
       // 验证格式
@@ -740,10 +719,18 @@ export default {
         isValid = true;
       } else if (phoneRegex.test(targetAccount)) {
         // 在这里可以添加发送短信验证码的逻辑 (如果需要)
-        ElNotification({ title: '提示', message: '短信功能暂未实现，请输入邮箱获取验证码。', type: 'info' });
+        ElNotification({
+          title: "提示",
+          message: "短信功能暂未实现，请输入邮箱获取验证码。",
+          type: "info",
+        });
         return;
       } else {
-        ElNotification({ title: '错误', message: '请输入正确的手机号或邮箱', type: 'error' });
+        ElNotification({
+          title: "错误",
+          message: "请输入正确的手机号或邮箱",
+          type: "error",
+        });
         return;
       }
 
@@ -754,7 +741,12 @@ export default {
         try {
           // 调用API发送邮件
           const response = await sendVerificationCode(targetAccount);
-          ElNotification({ title: '成功', message: response.data.message || "验证码已发送，请查收。", type: 'success' });
+          // Directly access 'message' from the response, as request utility might unpack it
+          ElNotification({
+            title: "成功",
+            message: response.message || "验证码已发送，请查收。",
+            type: "success",
+          });
 
           // 开始倒计时
           this.countdown = 60;
@@ -764,9 +756,13 @@ export default {
           }, 1000);
         } catch (error) {
           console.error("发送验证码失败:", error);
+          // Safely access nested properties using optional chaining
           const detail = error.response?.data?.detail || "发送失败，请稍后重试。";
-          ElNotification({ title: '错误', message: `发送验证码失败: ${detail}`, type: 'error' });
-          return; // 发送失败，不开始倒计时
+          ElNotification({
+            title: "错误",
+            message: `发送验证码失败: ${detail}`,
+            type: "error",
+          });
         }
       }
     },
@@ -780,77 +776,114 @@ export default {
       } else if (emailRegex.test(this.account)) {
         return true;
       } else {
-        ElNotification({ title: '错误', message: '请输入正确的手机号或邮箱', type: 'error' });
+        ElNotification({
+          title: "错误",
+          message: "请输入正确的手机号或邮箱",
+          type: "error",
+        });
         return false;
       }
     },
     // 处理登录
     async handleLogin() {
       if (!this.loginUserID || !this.password || !this.captchaInput) {
-        ElNotification({ title: '错误', message: 'ID、密码和验证码不能为空！', type: 'error' });
+        ElNotification({
+          title: "错误",
+          message: "ID、密码和验证码不能为空！",
+          type: "error",
+        });
         return;
       }
       if (this.captchaInput !== this.generatedCaptchaText) {
-        ElNotification({ title: '错误', message: '验证码错误！', type: 'error' });
+        ElNotification({ title: "错误", message: "验证码错误！", type: "error" });
         this.generateCaptcha(); // 刷新验证码
         this.captchaInput = ""; // 清空输入
         return;
       }
       try {
         const response = await login(this.loginUserID, this.password);
-        if (response.access_token) {
-          const token = response.access_token;
-          localStorage.setItem("user-token", token);
+        const token = response.access_token;
+        localStorage.setItem("token", token);
 
-          // 登录成功后，立即获取用户信息并存储user_class
-          try {
-            const userProfileResponse = await getUserProfile();
-            if (userProfileResponse.user_class) {
-              localStorage.setItem("user-class", userProfileResponse.user_class);
-            }
-          } catch (profileError) {
-            console.error("登录后获取用户信息失败:", profileError);
-            ElNotification({ title: '错误', message: '获取用户信息失败，请稍后重试', type: 'error' });
+        // 登录成功后，立即获取用户信息并存储user_class
+        try {
+          const userProfileResponse = await getUserProfile();
+          if (userProfileResponse.user_class) {
+            localStorage.setItem("user-class", userProfileResponse.user_class);
           }
-
-          ElNotification({ title: '成功', message: '登录成功!', type: 'success' });
-          this.$router.push("/home");
+        } catch (profileError) {
+          console.error("登录后获取用户信息失败:", profileError);
+          // 移除这里的通知，因为登录成功通知会处理
         }
+
+        ElNotification({ title: "成功", message: "登录成功!", type: "success" });
+        this.$router.push("/home");
       } catch (error) {
         const detail = error.response?.data?.detail || "登录失败，请检查您的凭据。";
-        ElNotification({ title: '登录失败', message: detail, type: 'error' });
+        ElNotification({ title: "登录失败", message: detail, type: "error" });
         this.generateCaptcha(); // 刷新验证码
         this.captchaInput = "";
       }
     },
-    // 处理验证码登录
     async handleCaptchaLogin() {
+      if (!this.email || !this.verificationCode) {
+        ElNotification({
+          title: "错误",
+          message: "请输入邮箱和验证码",
+          type: "error",
+        });
+        return;
+      }
       try {
-        await verifyCode(this.account, this.captchaInput);
-        // 验证通过后，再执行登录逻辑
-        ElNotification({ title: '成功', message: '登录成功!', type: 'success' });
-        localStorage.setItem("user-token", "your-secret-token");
-        this.$router.push("/home");
+        const response = await loginByCode(this.email, this.verificationCode);
+        const token = response.access_token;
+        localStorage.setItem("token", token);
+
+        // 登录成功后，立即获取用户信息并存储user_class
+        try {
+          const userProfileResponse = await getUserProfile();
+          if (userProfileResponse.user_class) {
+            localStorage.setItem("user-class", userProfileResponse.user_class);
+          }
+        } catch (profileError) {
+          console.error("登录后获取用户信息失败:", profileError);
+        }
+
+        this.$router.push({ name: "Home" });
+        ElNotification({
+          title: "成功",
+          message: "登录成功！",
+          type: "success",
+        });
       } catch (error) {
-        const detail = error.response?.data?.detail || "验证失败，请重试。";
-        ElNotification({ title: '错误', message: detail, type: 'error' });
+        const errorMessage =
+          error.response?.data?.detail || "登录失败，请检查您的邮箱和验证码";
+        ElNotification({
+          title: "登录失败",
+          message: errorMessage,
+          type: "error",
+        });
       }
     },
     // 处理注册
     handleRegister() {
       // 1. 检查空值
       if (!this.username || !this.password) {
-        ElNotification({ title: '错误', message: '用户名和密码不能为空！', type: 'error' });
+        ElNotification({
+          title: "错误",
+          message: "用户名和密码不能为空！",
+          type: "error",
+        });
         return;
       }
 
       // 2. 检查验证码
       if (!this.captchaInput) {
-        ElNotification({ title: '错误', message: '请输入验证码！', type: 'error' });
+        ElNotification({ title: "错误", message: "请输入验证码！", type: "error" });
         return;
       }
       if (this.captchaInput !== this.generatedCaptchaText) {
-        ElNotification({ title: '错误', message: '验证码不正确！', type: 'error' });
+        ElNotification({ title: "错误", message: "验证码不正确！", type: "error" });
         this.generateCaptcha(); // 刷新验证码
         this.captchaInput = ""; // 清空输入
         return;
@@ -858,21 +891,33 @@ export default {
 
       const usernameRegex = /^[a-zA-Z0-9\u4e00-\u9fa5]+$/;
       if (!usernameRegex.test(this.username)) {
-        ElNotification({ title: '错误', message: '用户名只能包含中文、字母和数字，不能使用特殊符号。', type: 'error' });
+        ElNotification({
+          title: "错误",
+          message: "用户名只能包含中文、字母和数字，不能使用特殊符号。",
+          type: "error",
+        });
         return;
       }
 
       if (this.password !== this.confirmPassword) {
-        ElNotification({ title: '错误', message: '两次输入的密码不一致！', type: 'error' });
+        ElNotification({
+          title: "错误",
+          message: "两次输入的密码不一致！",
+          type: "error",
+        });
         return;
       }
 
       if (!this.isRegisterFormValid) {
-        ElNotification({ title: '错误', message: '请确保所有字段都已正确填写，且两次输入的密码一致。', type: 'error' });
+        ElNotification({
+          title: "错误",
+          message: "请确保所有字段都已正确填写，且两次输入的密码一致。",
+          type: "error",
+        });
         return;
       }
 
-      if(this.validateCaptcha()) {
+      if (this.validateCaptcha()) {
         // 暂存用户名和密码
         this.registrationData.username = this.username;
         this.registrationData.password = this.password;
@@ -885,22 +930,28 @@ export default {
       this.isLoading = true;
 
       try {
-        // 步骤1：验证邮箱验证码
-        await verifyCode(this.account, this.captchaInput);
-
-        // 步骤2：验证码通过后，提交注册信息
-        // 从暂存数据中获取用户名和密码
+        // Now, call the redesigned register function with all data at once.
         const response = await register(
           this.registrationData.username,
           this.registrationData.password,
-          this.account
+          this.account, // This is the email from the bind form
+          this.captchaInput // This is the verification code
         );
 
-        ElNotification({ title: '成功', message: `${response.data.message}！现在可以用新账号登录了。`, type: 'success' });
-        this.navigateTo("login"); // 跳转到登录页面
+        ElNotification({
+          title: "成功",
+          message: `${response.message}！现在可以用新账号登录了。`,
+          type: "success",
+        });
+
+        // Reset state and navigate to login
+        this.resetRegistrationState();
+        this.navigateTo("login");
       } catch (error) {
-        const detail = error.response?.data?.detail || "操作失败，请重试。";
-        ElNotification({ title: '错误', message: `注册失败: ${detail}`, type: 'error' });
+        console.error("注册失败:", error);
+        const detail =
+          error.response?.data?.detail || "注册流程失败，请检查您的信息或稍后再试。";
+        ElNotification({ title: "错误", message: detail, type: "error" });
       } finally {
         this.isLoading = false;
       }
@@ -908,18 +959,41 @@ export default {
     // 表单验证
     validateForm() {
       if (!this.account) {
-        ElNotification({ title: '错误', message: '请输入手机号或邮箱', type: 'error' });
+        ElNotification({ title: "错误", message: "请输入手机号或邮箱", type: "error" });
         return false;
       }
       if (!this.captchaInput) {
-        ElNotification({ title: '错误', message: '请输入验证码', type: 'error' });
+        ElNotification({ title: "错误", message: "请输入验证码", type: "error" });
         return false;
       }
       if (!this.agreeTerms) {
-        ElNotification({ title: '错误', message: '请同意用户协议和隐私政策', type: 'error' });
+        ElNotification({
+          title: "错误",
+          message: "请同意用户协议和隐私政策",
+          type: "error",
+        });
         return false;
       }
       return true;
+    },
+    // 重置注册状态
+    resetRegistrationState() {
+      this.username = "";
+      this.password = "";
+      this.passwordVisible = false;
+      this.captchaInput = "";
+      this.generatedCaptchaText = "";
+      this.confirmPassword = "";
+      this.confirmPasswordVisible = false;
+      this.account = "";
+      this.agreeTerms = false;
+      this.email = "";
+      this.verificationCode = ""; // Reset captcha login fields
+      this.newPassword = "";
+      this.newPasswordVisible = false;
+      this.confirmNewPassword = "";
+      this.confirmNewPasswordVisible = false;
+      this.countdown = 0;
     },
     // 显示用户协议
     showTerms() {
@@ -930,27 +1004,36 @@ export default {
       this.showPrivacyModal = true;
     },
     // 邮箱找回密码
-    async resetPasswordByEmail() {
+    async handleResetPassword() {
       if (!this.isFindPasswordByEmailFormValid) {
-        ElNotification({ title: '错误', message: '请确保所有字段都已正确填写，且两次输入的新密码一致。', type: 'error' });
+        ElNotification({ title: "错误", message: "请完整填写所有字段。", type: "error" });
         return;
       }
       try {
-        // 调用后端的重置密码接口
         const response = await resetPassword(
           this.email,
           this.captchaInput,
           this.newPassword
         );
-        ElNotification({ title: '成功', message: response.data.message || "密码重置成功！", type: 'success' });
+        ElNotification({
+          title: "成功",
+          message: response.message || "密码重置成功，请使用新密码登录。",
+          type: "success",
+        });
         this.navigateTo("login");
       } catch (error) {
-        const detail = error.response?.data?.detail || "操作失败，请重试。";
-        ElNotification({ title: '错误', message: `密码重置失败: ${detail}`, type: 'error' });
+        console.error("重置密码失败:", error);
+        const detail = error.response?.data?.detail || "重置密码失败，请重试。";
+        ElNotification({ title: "错误", message: detail, type: "error" });
       }
     },
+
     alertNotAvailable() {
-      ElNotification({ title: '提示', message: '该功能暂未开放', type: 'info' });
+      ElNotification({
+        title: "功能待开发",
+        message: "扫码登录功能正在开发中，敬请期待！",
+        type: "info",
+      });
     },
     // 设置认证页面的背景样式
     authPageStyle(bgName) {

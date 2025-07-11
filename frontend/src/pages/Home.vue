@@ -76,10 +76,15 @@ const handleAuthClick = () => {
 };
 
 const logout = () => {
-  localStorage.removeItem("user-token");
+  localStorage.removeItem("token");
   localStorage.removeItem("user-class");
   store.setPendingApplicationsCount(0); // Clear badge on logout
   router.push("/");
+  ElNotification({
+    title: '已退出',
+    message: '您已成功退出登录。',
+    type: 'success'
+  });
 };
 </script>
 

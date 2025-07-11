@@ -1,5 +1,5 @@
+import { getPendingApplicationsCount, getUserProfile } from '@/api/user'; // 假设API路径
 import { defineStore } from 'pinia';
-import { getUserProfile, getPendingApplicationsCount } from '@/api/user'; // 假设API路径
 
 export const useMainStore = defineStore('main', {
   state: () => ({
@@ -16,14 +16,21 @@ export const useMainStore = defineStore('main', {
     async fetchPendingApplicationsCount() {
         // 仅当用户是管理员时才获取
         const userClass = localStorage.getItem('user-class');
-        if (userClass === '管理员') {
-            try {
-                const response = await getPendingApplicationsCount();
-                this.setPendingApplicationsCount(response.pending_count);
-            } catch (error) {
-                console.error("获取待处理申请数量失败:", error);
-                this.setPendingApplicationsCount(0); // Or handle error appropriately
-            }
+        const token = localStorage.getItem('token');
+        
+        // 如果没有token或者不是管理员，直接返回
+        if (!token || userClass !== '管理员') {
+            this.setPendingApplicationsCount(0);
+            return;
+        }
+        
+        try {
+            const response = await getPendingApplicationsCount();
+            this.setPendingApplicationsCount(response.pending_count);
+        } catch (error) {
+            console.error("获取待处理申请数量失败:", error);
+            this.setPendingApplicationsCount(0);
+            // 不显示错误通知，让全局错误处理器处理
         }
     },
     async fetchUserProfile() {
@@ -35,6 +42,7 @@ export const useMainStore = defineStore('main', {
       } catch (error) {
         console.error("获取用户信息失败:", error);
         this.setUser(null);
+        // 不显示错误通知，让全局错误处理器处理
       }
     }
   }

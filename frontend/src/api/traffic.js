@@ -1,9 +1,9 @@
-import axios from 'axios'
+import axios from '@/utils/request'
 
 export function getTrafficStats() {
-  return axios.get('/api/traffic/stats')
+  return axios.get('/traffic/stats')
 }
 
 export function getTrafficVisualization() {
-  return axios.get('/api/traffic/visualization')
+  return axios.get('/traffic/visualization')
 } 

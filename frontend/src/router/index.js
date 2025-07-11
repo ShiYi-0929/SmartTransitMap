@@ -14,7 +14,8 @@ const routes = [
   {
     path: '/',
     name: 'AllViews',
-    component: AllViews
+    component: AllViews,
+    meta: { guest: true } // Mark this as a guest-only route
   },
   {
     path: '/home',
@@ -87,23 +88,30 @@ const router = createRouter({
 });
 
 router.beforeEach((to, from, next) => {
-  const token = localStorage.getItem('user-token');
+  const token = localStorage.getItem('token');
   const userClass = localStorage.getItem('user-class'); 
   const isAuthenticated = !!token;
 
   if (to.meta.requiresAuth && !isAuthenticated) {
-    alert('此页面需要登录，请先登录。');
+    ElNotification({
+      title: '访问受限',
+      message: '此页面需要登录，请先登录。',
+      type: 'warning'
+    });
     return next('/');
   }
 
-  if (to.meta.requiresAdmin && userClass !== '管理员') {
-    alert('您没有权限访问此页面。');
+  if (to.meta.requiresAdmin && userClass?.trim() !== '管理员') {
+    ElNotification({
+      title: '权限不足',
+      message: '您没有权限访问此页面。',
+      type: 'error'
+    });
     return next('/home');
   }
   
-  // 如果用户已登录，但尝试访问登录/注册页（假设根路径'/'是登录页），则重定向到主页
-  if (isAuthenticated && to.path === '/') {
-      // 假设AllViews是登录/注册页的容器
+  // 如果用户已登录，但尝试访问访客页面（如登录页），则重定向到主页
+  if (isAuthenticated && to.meta.guest) {
       return next('/home');
   }
 
