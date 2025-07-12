@@ -36,8 +36,8 @@ const routes = [
     meta: { requiresAuth: true },
     beforeEnter: (to, from, next) => {
       const userClass = localStorage.getItem('user-class');
-      // Corrected the condition to check for Chinese role names
-      if (userClass && (userClass.trim() === '认证用户' || userClass.trim() === '管理员')) {
+      // 只阻止认证用户访问，管理员需要访问进行数据管理
+      if (userClass && userClass.trim() === '认证用户') {
         ElNotification({
           title: '访问限制',
           message: '您已是认证用户，无需再次进入认证页面。',
