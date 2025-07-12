@@ -112,7 +112,8 @@ def get_predictor():
             print(f"模型加载失败: {error_msg}")
             raise HTTPException(500, error_msg)
     return predictor
-DATA_DIR = os.path.join(BASE_DIR, "..", "..", "faces_data")
+
+DATA_DIR = os.path.join(BASE_DIR, "..", "..", "..", "faces_data")
 IMAGES_DIR = os.path.join(DATA_DIR, "faces_images")
 ENC_FILE = os.path.join(DATA_DIR, "encodings.pkl")
 CSV_FILE = os.path.join(DATA_DIR, "faces.csv")
