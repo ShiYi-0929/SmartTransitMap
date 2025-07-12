@@ -1,13 +1,31 @@
 <template>
-  <div class="face-recognition-container">
+  <div class="face-recognition-container" :class="themeClass">
     <!-- 左侧导航栏 -->
     <aside class="sidebar">
       <h2 class="sidebar-title">人脸识别模块</h2>
       <nav class="sidebar-nav">
         <ul>
-          <li :class="{ active: currentTab === 'face-enter' }" @click="currentTab = 'face-enter'">人脸录入</li>
-          <li :class="{ active: currentTab === 'face-verify' }" @click="currentTab = 'face-verify'">人脸验证</li>
-          <li :class="{ active: currentTab === 'face-manage' }" @click="currentTab = 'face-manage'">人脸数据管理</li>
+          <template v-if="!isAdmin">
+            <li
+              :class="{ active: currentTab === 'face-enter' }"
+              @click="currentTab = 'face-enter'"
+            >
+              人脸录入
+            </li>
+            <li
+              :class="{ active: currentTab === 'face-verify' }"
+              @click="currentTab = 'face-verify'"
+            >
+              人脸验证
+            </li>
+          </template>
+          <li
+            v-if="isAdmin"
+            :class="{ active: currentTab === 'face-manage' }"
+            @click="currentTab = 'face-manage'"
+          >
+            人脸数据管理
+          </li>
           <li @click="$router.push('/home')">返回首页</li>
         </ul>
       </nav>
@@ -21,28 +39,50 @@
               <div class="panel-header">摄像头</div>
               <div class="panel-body camera-panel-body">
                 <div class="camera-feed">
-                  <video ref="entryVideoPlayer" class="video-stream" autoplay playsinline></video>
+                  <video
+                    ref="entryVideoPlayer"
+                    class="video-stream"
+                    autoplay
+                    playsinline
+                  ></video>
                   <div class="camera-mask"></div>
                   <!-- 中心识别圆形框，仅视觉提示 -->
                   <div class="center-circle"></div>
                 </div>
                 <div class="snapshot-area">
-                    <button class="btn" @click="takeSnapshot" :disabled="captureCompleted || !isFaceInFrame || captureInProgress">
-                      {{ captureInProgress ? `拍摄中 (${captureCountdown}s)` : (captureCompleted ? '拍照已完成' : '拍照') }}
-                    </button>
-                    <p v-if="!isFaceInFrame && !captureInProgress && !captureCompleted" style="color:#0b2b40;margin-top:8px;">请将人脸放置在拍摄范围内</p>
-                    <p v-if="captureCompleted" style="color:#0b2b40;margin-top:8px;">拍照已完成，如需重新拍摄请点击取消</p>
-                    <div class="snapshot-preview">
-                        <img v-if="snapshotDataUrl" :src="snapshotDataUrl" alt="快照">
-                        <span v-else>拍照预览</span>
-                    </div>
+                  <button
+                    class="btn"
+                    @click="takeSnapshot"
+                    :disabled="captureCompleted || !isFaceInFrame || captureInProgress"
+                  >
+                    {{
+                      captureInProgress
+                        ? `拍摄中 (${captureCountdown}s)`
+                        : captureCompleted
+                        ? "拍照已完成"
+                        : "拍照"
+                    }}
+                  </button>
+                  <p
+                    v-if="!isFaceInFrame && !captureInProgress && !captureCompleted"
+                    style="color: #0b2b40; margin-top: 8px"
+                  >
+                    请将人脸放置在拍摄范围内
+                  </p>
+                  <p v-if="captureCompleted" style="color: #0b2b40; margin-top: 8px">
+                    拍照已完成，如需重新拍摄请点击取消
+                  </p>
+                  <div class="snapshot-preview">
+                    <img v-if="snapshotDataUrl" :src="snapshotDataUrl" alt="快照" />
+                    <span v-else>拍照预览</span>
+                  </div>
                 </div>
                 <!-- 新增：拍摄引导和进度条 -->
                 <div v-if="captureInProgress" class="capture-guidance">
-                    <p>{{ guidanceText }}</p>
-                    <div class="progress-bar">
-                        <div class="progress" :style="{ width: progress + '%' }"></div>
-                    </div>
+                  <p>{{ guidanceText }}</p>
+                  <div class="progress-bar">
+                    <div class="progress" :style="{ width: progress + '%' }"></div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -53,23 +93,34 @@
               <div class="panel-body entry-form">
                 <div class="feature-box">
                   <span>人脸特征</span>
-                  <img v-if="snapshotDataUrl" :src="snapshotDataUrl" alt="人脸特征">
-                  <img v-else :src="avatarImage" alt="人脸特征占位符">
+                  <img v-if="snapshotDataUrl" :src="snapshotDataUrl" alt="人脸特征" />
+                  <img v-else :src="avatarImage" alt="人脸特征占位符" />
                 </div>
                 <div class="input-group">
                   <label>ID:</label>
                   <input type="text" v-model="entryName" />
                 </div>
                 <div class="entry-buttons">
-                  <button class="btn" @click="saveEntry" :disabled="isSaving || captureInProgress || snapshotImages.length < 3">
-                    {{ isSaving ? '录入中...' : (captureInProgress ? '拍照中...' : '保存') }}
+                  <button
+                    class="btn"
+                    @click="saveEntry"
+                    :disabled="isSaving || captureInProgress || snapshotImages.length < 3"
+                  >
+                    {{
+                      isSaving ? "录入中..." : captureInProgress ? "拍照中..." : "保存"
+                    }}
                   </button>
-                  <button class="btn btn-cancel" @click="cancelCapture" v-if="captureCompleted" :disabled="isSaving">
+                  <button
+                    class="btn btn-cancel"
+                    @click="cancelCapture"
+                    v-if="captureCompleted"
+                    :disabled="isSaving"
+                  >
                     取消
                   </button>
                 </div>
-                <p v-if="captureInProgress" style="color:#0b2b40;">拍照中，请稍后...</p>
-                <p v-else-if="isSaving" style="color:#0b2b40;">录入中，请稍后...</p>
+                <p v-if="captureInProgress" style="color: #0b2b40">拍照中，请稍后...</p>
+                <p v-else-if="isSaving" style="color: #0b2b40">录入中，请稍后...</p>
               </div>
             </div>
           </div>
@@ -80,7 +131,7 @@
           <!-- Initial state before verification -->
           <template v-if="!isVerifying">
             <div class="face-placeholder">
-              <img :src="avatarImage" alt="人脸示例" class="face-img">
+              <img :src="avatarImage" alt="人脸示例" class="face-img" />
             </div>
             <p>将面部放入识别框内</p>
             <button class="verify-btn" @click="startVerify">开始验证</button>
@@ -92,20 +143,30 @@
             <div class="face-placeholder">
               <video ref="videoPlayer" class="video-stream" autoplay playsinline></video>
             </div>
-            
+
             <!-- 眨眼检测状态显示 -->
             <div class="blink-status" v-if="blinkDetectionActive">
               <p class="blink-instruction">{{ blinkInstruction }}</p>
               <div class="blink-progress">
-                <div class="blink-indicator" :class="{ 'detected': isBlinking }">
-                  {{ isBlinking ? '检测到眨眼' : '请眨眼' }}
+                <div class="blink-indicator" :class="{ detected: isBlinking }">
+                  {{ isBlinking ? "检测到眨眼" : "请眨眼" }}
                 </div>
                 <div class="countdown">{{ blinkCountdown }}s</div>
               </div>
             </div>
-            
-            <button class="btn" @click="captureVerify" :disabled="isRecognizing || blinkDetectionActive">
-              {{ isRecognizing ? '识别中...' : (blinkDetectionActive ? '活体检测中...' : '识别') }}
+
+            <button
+              class="btn"
+              @click="captureVerify"
+              :disabled="isRecognizing || blinkDetectionActive"
+            >
+              {{
+                isRecognizing
+                  ? "识别中..."
+                  : blinkDetectionActive
+                  ? "活体检测中..."
+                  : "识别"
+              }}
             </button>
             <p v-if="verifyResult">识别结果：{{ verifyResult }}</p>
           </template>
@@ -127,7 +188,9 @@
                 <div class="actions">
                   <button class="btn btn-add" @click="addFace(f)">添加</button>
                   <button class="btn btn-edit" @click="openEditor(f)">编辑</button>
-                  <button class="btn btn-delete" @click="askDeleteFace(f.id)">删除</button>
+                  <button class="btn btn-delete" @click="askDeleteFace(f.id)">
+                    删除
+                  </button>
                 </div>
               </li>
               <li v-if="!facesList.length">暂无数据</li>
@@ -136,7 +199,7 @@
         </div>
       </section>
     </main>
-    <canvas ref="snapshotCanvas" style="display: none;"></canvas>
+    <canvas ref="snapshotCanvas" style="display: none"></canvas>
     <div v-if="showUnknownModal" class="modal-overlay">
       <div class="modal-box">
         <h2>提示</h2>
@@ -147,7 +210,7 @@
     <!-- 人脸录入进行中提示 -->
     <div v-if="isSaving" class="modal-overlay">
       <div class="modal-box">
-        <p style="font-size:18px;">人脸录入中，请稍后...</p>
+        <p style="font-size: 18px">人脸录入中，请稍后...</p>
       </div>
     </div>
 
@@ -156,7 +219,7 @@
         <span class="modal-close-btn" @click="closeAlbum">×</span>
         <h2>人脸照片集</h2>
         <div class="album-grid">
-          <img v-for="(img,idx) in albumImages" :key="idx" :src="img" />
+          <img v-for="(img, idx) in albumImages" :key="idx" :src="img" />
           <p v-if="!albumImages.length">暂无记录</p>
         </div>
         <button class="btn" @click="closeAlbum">关闭</button>
@@ -164,15 +227,15 @@
     </div>
     <!-- 编辑用户 -->
     <div v-if="editorVisible" class="modal-overlay">
-      <div class="modal-box album-box" style="max-height:80vh;overflow:auto;">
+      <div class="modal-box album-box" style="max-height: 80vh; overflow: auto">
         <h2>编辑用户</h2>
-        <div class="input-group" style="margin-bottom:15px;">
+        <div class="input-group" style="margin-bottom: 15px">
           <label>ID:</label>
           <span>{{ editorName }}</span>
         </div>
         <div class="album-grid">
-          <div v-for="(img,idx) in editorImages" :key="idx" style="position:relative;">
-            <img :src="img" @click="openFullImage(img)" style="cursor:pointer;" />
+          <div v-for="(img, idx) in editorImages" :key="idx" style="position: relative">
+            <img :src="img" @click="openFullImage(img)" style="cursor: pointer" />
             <span class="img-close" @click="confirmDeleteImage(img)">×</span>
           </div>
           <p v-if="!editorImages.length">暂无图片</p>
@@ -182,10 +245,10 @@
     </div>
     <!-- 删除图片确认弹窗 -->
     <div v-if="deleteModalVisible" class="modal-overlay">
-      <div class="modal-box" style="width:320px;">
+      <div class="modal-box" style="width: 320px">
         <h2>确认删除</h2>
-        <p style="margin-bottom:20px;">是否确认删除该照片？</p>
-        <div style="display:flex;justify-content:center;gap:20px;">
+        <p style="margin-bottom: 20px">是否确认删除该照片？</p>
+        <div style="display: flex; justify-content: center; gap: 20px">
           <button class="btn" @click="confirmDeleteImageReal">确定</button>
           <button class="btn btn-cancel" @click="cancelDeleteImage">取消</button>
         </div>
@@ -205,10 +268,10 @@
     </div>
     <!-- 删除用户确认弹窗 -->
     <div v-if="deleteFaceModalVisible" class="modal-overlay">
-      <div class="modal-box" style="width:320px;">
+      <div class="modal-box" style="width: 320px">
         <h2>确认删除</h2>
-        <p style="margin-bottom:20px;">是否确认删除该用户？</p>
-        <div style="display:flex;justify-content:center;gap:20px;">
+        <p style="margin-bottom: 20px">是否确认删除该用户？</p>
+        <div style="display: flex; justify-content: center; gap: 20px">
           <button class="btn" @click="confirmDeleteFaceReal">确定</button>
           <button class="btn btn-cancel" @click="cancelDeleteFace">取消</button>
         </div>
@@ -218,13 +281,16 @@
 </template>
 
 <script>
-import avatar from '@/assets/avatar.png';
+import avatar from "@/assets/avatar.png";
 
 export default {
-  name: 'FaceRecognition',
+  name: "FaceRecognition",
   data() {
+    const userRole = localStorage.getItem("user-class")?.trim();
+    const isAdmin = userRole === "管理员";
+
     return {
-      currentTab: 'face-enter', // 默认显示人脸验证 tab，可根据需求调整
+      currentTab: isAdmin ? "face-manage" : "face-enter", // 默认显示人脸验证 tab，可根据需求调整
       avatarImage: avatar,
       isVerifying: false,
       verifyStream: null,
@@ -232,56 +298,63 @@ export default {
       snapshotDataUrl: null,
       snapshotImages: [],
       captureInProgress: false,
-      entryName: '',
+      entryName: "",
       editingId: null,
-      editingOriginalName: '',
-      verifyResult: '',
+      editingOriginalName: "",
+      verifyResult: "",
       showUnknownModal: false,
       msgModalVisible: false,
-      msgModalText: '',
+      msgModalText: "",
       isSaving: false,
       albumVisible: false,
       albumImages: [],
       editorVisible: false,
       editorPersonId: null,
-      editorName: '',
+      editorName: "",
       editorImages: [],
       nameSaving: false,
       isRecognizing: false, // 新增：用于禁用识别按钮
-      API_BASE: '/api/face',
+      API_BASE: "/api/face",
       facesList: [],
-      searchQuery: '',
+      searchQuery: "",
       deleteModalVisible: false,
-      pendingDeleteImage: '',
+      pendingDeleteImage: "",
       fullImageVisible: false,
-      fullImageSrc: '',
+      fullImageSrc: "",
       faceDetected: false,
       isFaceInFrame: false, // 实时监测人脸是否在框内
       faceDetectionInterval: null, // 定时器
       deleteFaceModalVisible: false,
-      pendingDeleteFaceId: '',
+      pendingDeleteFaceId: "",
       captureCountdown: 15, // 拍照倒计时
-      guidanceText: '准备...', // 拍摄引导文本
+      guidanceText: "准备...", // 拍摄引导文本
       progress: 0, // 进度条进度
       captureInterval: null, // 拍照定时器
       captureCompleted: false, // 拍照是否已完成
       blinkDetectionActive: false, // 眨眼检测是否激活
       isBlinking: false, // 当前是否在眨眼
-      blinkInstruction: '请看向摄像头并眨眼以确认您是真人', // 眨眼指导文字
+      blinkInstruction: "请看向摄像头并眨眼以确认您是真人", // 眨眼指导文字
       blinkCountdown: 10, // 眨眼检测倒计时
       blinkDetectionInterval: null, // 眨眼检测定时器
       blinkDetectionTimer: null, // 眨眼检测超时定时器
       blinkDetected: false, // 是否检测到有效眨眼
       blinkHistory: [], // 眨眼状态历史
       lastBlinkTime: 0, // 上次眨眼时间
-    }
+    };
   },
   computed: {
+    isAdmin() {
+      // 从 localStorage 获取角色信息
+      return localStorage.getItem("user-class")?.trim() === "管理员";
+    },
+    themeClass() {
+      return this.isAdmin ? "admin-theme" : "user-theme";
+    },
     filteredFaces() {
       const q = this.searchQuery.trim();
       if (!q) return this.facesList;
-      return this.facesList.filter(f => f.name.includes(q));
-    }
+      return this.facesList.filter((f) => f.name.includes(q));
+    },
   },
   watch: {
     entryName(newVal) {
@@ -292,33 +365,33 @@ export default {
     },
     currentTab(newTab, oldTab) {
       // Stop cameras when switching away from a tab
-      if (oldTab === 'face-enter') {
+      if (oldTab === "face-enter") {
         this.stopEntryCamera();
       }
-      if (oldTab === 'face-verify') {
+      if (oldTab === "face-verify") {
         this.stopVerifyCamera();
         this.isVerifying = false;
-        this.verifyResult = ''; // 离开页面时清空结果
+        this.verifyResult = ""; // 离开页面时清空结果
       }
 
       // Start camera when switching to the entry tab
-      if (newTab === 'face-enter') {
+      if (newTab === "face-enter") {
         this.$nextTick(() => {
           this.startEntryCamera();
           this.startRealtimeFaceCheck();
         });
         // 每次进入录入页面，默认新建模式，重置所有状态
         this.editingId = null;
-        this.editingOriginalName = '';
+        this.editingOriginalName = "";
         // 不重置拍摄状态，保持用户的拍摄数据
       } else {
         this.stopRealtimeFaceCheck();
       }
 
-      if (newTab === 'face-manage') {
+      if (newTab === "face-manage") {
         this.fetchFaces();
       }
-    }
+    },
   },
   methods: {
     startRealtimeFaceCheck() {
@@ -329,34 +402,33 @@ export default {
         if (this.captureCompleted) {
           return;
         }
-        
+
         const video = this.$refs.entryVideoPlayer;
         const canvas = this.$refs.snapshotCanvas;
         if (video && video.readyState >= 3 && canvas) {
           try {
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
+            const ctx = canvas.getContext("2d");
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             // 发送低质量jpg以提高性能
-            const frame = canvas.toDataURL('image/jpeg', 0.5);
+            const frame = canvas.toDataURL("image/jpeg", 0.5);
 
             const response = await fetch(`${this.API_BASE}/check_face_in_frame`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ image: frame })
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ image: frame }),
             });
 
-            if (!response.ok) throw new Error('Backend check failed');
+            if (!response.ok) throw new Error("Backend check failed");
 
             const result = await response.json();
             this.isFaceInFrame = result.in_frame;
-            
+
             // 如果人脸移出范围且拍摄未完成，清除旧的快照预览
             if (!this.isFaceInFrame && !this.captureCompleted) {
               this.snapshotDataUrl = null;
             }
-
           } catch (error) {
             this.isFaceInFrame = false;
           }
@@ -373,14 +445,17 @@ export default {
     // --- Verification Tab Methods ---
     async startVerify() {
       this.isVerifying = true;
-      this.verifyResult = '';
+      this.verifyResult = "";
       this.$nextTick(() => {
         this.startVerifyCamera();
       });
     },
     async startVerifyCamera() {
       try {
-        this.verifyStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        this.verifyStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
         const videoPlayer = this.$refs.videoPlayer;
         if (videoPlayer) {
           videoPlayer.srcObject = this.verifyStream;
@@ -393,7 +468,7 @@ export default {
     },
     stopVerifyCamera() {
       if (this.verifyStream) {
-        this.verifyStream.getTracks().forEach(track => track.stop());
+        this.verifyStream.getTracks().forEach((track) => track.stop());
         this.verifyStream = null;
       }
       this.stopBlinkDetection(); // 停止眨眼检测
@@ -401,8 +476,11 @@ export default {
 
     // --- Entry Tab Methods ---
     async startEntryCamera() {
-       try {
-        this.entryStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      try {
+        this.entryStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
         const videoPlayer = this.$refs.entryVideoPlayer;
         if (videoPlayer) {
           videoPlayer.srcObject = this.entryStream;
@@ -414,7 +492,7 @@ export default {
     },
     stopEntryCamera() {
       if (this.entryStream) {
-        this.entryStream.getTracks().forEach(track => track.stop());
+        this.entryStream.getTracks().forEach((track) => track.stop());
         this.entryStream = null;
       }
     },
@@ -422,7 +500,7 @@ export default {
       const TOTAL_SNAPSHOTS = 5; // 改为5张
       const INTERVAL = 1000;
       const GUIDANCE_STEPS = [
-        { duration: 5, text: '请正对摄像头' }, // 只保留一个提示
+        { duration: 5, text: "请正对摄像头" }, // 只保留一个提示
       ];
 
       this.captureInProgress = true;
@@ -432,7 +510,7 @@ export default {
       let count = 0;
       let guidanceIndex = 0;
       let durationCount = 0;
-      
+
       this.guidanceText = GUIDANCE_STEPS[0].text;
       this.captureCountdown = TOTAL_SNAPSHOTS;
 
@@ -444,29 +522,29 @@ export default {
       }
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext("2d");
 
       this.captureInterval = setInterval(async () => {
         if (count >= TOTAL_SNAPSHOTS) {
           clearInterval(this.captureInterval);
           this.captureInProgress = false;
           this.captureCompleted = true; // 标记拍摄完成
-          this.guidanceText = '拍摄完成！';
+          this.guidanceText = "拍摄完成！";
           return;
         }
 
         // ---- 修改：只有拍摄未完成时才检查人脸范围 ----
         if (!this.captureCompleted) {
-          const frameForCheck = canvas.toDataURL('image/jpeg', 0.5);
+          const frameForCheck = canvas.toDataURL("image/jpeg", 0.5);
           try {
             const response = await fetch(`${this.API_BASE}/check_face_in_frame`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ image: frameForCheck })
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ image: frameForCheck }),
             });
-            if (!response.ok) throw new Error('Backend check failed');
+            if (!response.ok) throw new Error("Backend check failed");
             const result = await response.json();
-            
+
             if (!result.in_frame) {
               // ---- 如果人脸离开范围，则中断 ----
               clearInterval(this.captureInterval);
@@ -478,14 +556,14 @@ export default {
               return;
             }
           } catch (error) {
-             // 网络或后端错误也视为失败
-             clearInterval(this.captureInterval);
-             this.captureInProgress = false;
-             this.showMsg("检测服务异常，请稍后重试。");
-             return;
+            // 网络或后端错误也视为失败
+            clearInterval(this.captureInterval);
+            this.captureInProgress = false;
+            this.showMsg("检测服务异常，请稍后重试。");
+            return;
           }
         }
-        
+
         // 切换引导语
         durationCount++;
         if (durationCount >= GUIDANCE_STEPS[guidanceIndex].duration) {
@@ -498,7 +576,7 @@ export default {
 
         // 拍照
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/png');
+        const dataUrl = canvas.toDataURL("image/png");
         this.snapshotImages.push(dataUrl);
         if (this.snapshotImages.length === 1) {
           this.snapshotDataUrl = dataUrl; // 显示第一张作为预览
@@ -507,37 +585,40 @@ export default {
         count++;
         this.progress = (count / TOTAL_SNAPSHOTS) * 100;
         this.captureCountdown = TOTAL_SNAPSHOTS - count;
-
       }, INTERVAL);
     },
     saveEntry() {
       if (!this.snapshotDataUrl || !this.entryName.trim()) {
-        this.showMsg('请先拍照并输入姓名！');
+        this.showMsg("请先拍照并输入姓名！");
         return;
       }
       this.isSaving = true;
       fetch(`${this.API_BASE}/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: this.entryName, person_id: this.editingId || this.entryName.trim(), images: this.snapshotImages })
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: this.entryName,
+          person_id: this.editingId || this.entryName.trim(),
+          images: this.snapshotImages,
+        }),
       })
-        .then(res => {
-          if (!res.ok) throw new Error('录入失败');
+        .then((res) => {
+          if (!res.ok) throw new Error("录入失败");
           return res.json();
         })
         .then(() => {
-          this.showMsg('录入成功！');
+          this.showMsg("录入成功！");
           // Reset form
-          this.entryName = '';
+          this.entryName = "";
           this.snapshotDataUrl = null;
           this.snapshotImages = [];
           this.captureCompleted = false;
           this.editingId = null;
-          this.editingOriginalName = '';
+          this.editingOriginalName = "";
         })
-        .catch(err => {
+        .catch((err) => {
           console.error(err);
-          this.showMsg('录入失败，请检查后端日志');
+          this.showMsg("录入失败，请检查后端日志");
         })
         .finally(() => {
           this.isSaving = false;
@@ -547,67 +628,71 @@ export default {
       // 首先启动眨眼检测
       this.startBlinkDetection();
     },
-    
+
     startBlinkDetection() {
       this.blinkDetectionActive = true;
       this.isBlinking = false;
       this.blinkDetected = false;
       this.blinkCountdown = 10;
-      
+
       // 开始检测眨眼
       this.blinkDetectionInterval = setInterval(async () => {
         const video = this.$refs.videoPlayer;
         const canvas = this.$refs.snapshotCanvas;
-        
+
         if (!video || !this.verifyStream) {
           this.stopBlinkDetection();
           return;
         }
-        
+
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext("2d");
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-        
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+
         try {
           const response = await fetch(`${this.API_BASE}/detect_blink`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: dataUrl })
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ image: dataUrl }),
           });
-          
+
           if (!response.ok) {
             const errorData = await response.json();
-            console.error('眨眼检测API错误:', errorData);
-            throw new Error(errorData.detail || '眨眼检测失败');
+            console.error("眨眼检测API错误:", errorData);
+            throw new Error(errorData.detail || "眨眼检测失败");
           }
-          
+
           const result = await response.json();
-          console.log('眨眼检测结果:', result);
-          
+          console.log("眨眼检测结果:", result);
+
           if (result.has_face) {
             // 显示EAR值用于调试
-            console.log(`EAR值: 左眼=${result.left_ear}, 右眼=${result.right_ear}, 平均=${result.avg_ear}`);
-            
+            console.log(
+              `EAR值: 左眼=${result.left_ear}, 右眼=${result.right_ear}, 平均=${result.avg_ear}`
+            );
+
             // 改进的眨眼检测逻辑
             const currentTime = Date.now();
             this.blinkHistory.push({
               isBlinking: result.is_blinking,
               avgEar: result.avg_ear,
-              time: currentTime
+              time: currentTime,
             });
-            
+
             // 只保留最近2秒的历史
-            this.blinkHistory = this.blinkHistory.filter(h => currentTime - h.time < 2000);
-            
+            this.blinkHistory = this.blinkHistory.filter(
+              (h) => currentTime - h.time < 2000
+            );
+
             // 检测眨眼模式：从睁眼到闭眼再到睁眼
             if (this.detectBlinkPattern() && !this.blinkDetected) {
               this.blinkDetected = true;
               this.isBlinking = true;
-              this.blinkInstruction = '眨眼检测成功！正在进行人脸识别...';
-              console.log('眨眼检测成功！');
-              
+              this.blinkInstruction = "眨眼检测成功！正在进行人脸识别...";
+              console.log("眨眼检测成功！");
+
               // 延迟一秒后进行人脸识别
               setTimeout(() => {
                 this.stopBlinkDetection();
@@ -618,29 +703,32 @@ export default {
             }
           } else {
             this.isBlinking = false;
-            console.log('未检测到人脸');
+            console.log("未检测到人脸");
           }
         } catch (error) {
-          console.error('眨眼检测错误:', error);
+          console.error("眨眼检测错误:", error);
           // 如果是模型加载错误，显示给用户
-          if (error.message.includes('模型') || error.message.includes('shape_predictor')) {
+          if (
+            error.message.includes("模型") ||
+            error.message.includes("shape_predictor")
+          ) {
             this.stopBlinkDetection();
-            this.showMsg('眨眼检测功能暂不可用，将直接进行人脸识别');
+            this.showMsg("眨眼检测功能暂不可用，将直接进行人脸识别");
             setTimeout(() => {
               this.performFaceRecognition();
             }, 1000);
           }
         }
       }, 300); // 每300ms检测一次
-      
+
       // 设置超时定时器
       this.blinkDetectionTimer = setTimeout(() => {
         if (!this.blinkDetected) {
           this.stopBlinkDetection();
-          this.showMsg('眨眼检测超时，请重新验证');
+          this.showMsg("眨眼检测超时，请重新验证");
         }
       }, 10000); // 10秒超时
-      
+
       // 倒计时
       const countdownInterval = setInterval(() => {
         this.blinkCountdown--;
@@ -649,7 +737,7 @@ export default {
         }
       }, 1000);
     },
-    
+
     stopBlinkDetection() {
       this.blinkDetectionActive = false;
       if (this.blinkDetectionInterval) {
@@ -663,18 +751,18 @@ export default {
       // 清空眨眼历史
       this.blinkHistory = [];
     },
-    
+
     detectBlinkPattern() {
       if (this.blinkHistory.length < 6) return false; // 需要足够的历史数据
-      
+
       // 查找眨眼模式：睁眼 -> 闭眼 -> 睁眼
       let openCount = 0;
       let closedCount = 0;
       let hasTransition = false;
-      
+
       for (let i = 0; i < this.blinkHistory.length; i++) {
         const current = this.blinkHistory[i];
-        
+
         if (current.isBlinking) {
           closedCount++;
           if (openCount > 0) {
@@ -683,52 +771,52 @@ export default {
         } else {
           if (closedCount > 0 && hasTransition) {
             // 找到完整的眨眼模式：睁眼 -> 闭眼 -> 睁眼
-            console.log('检测到完整眨眼模式');
+            console.log("检测到完整眨眼模式");
             return true;
           }
           openCount++;
         }
       }
-      
+
       return false;
     },
-    
+
     performFaceRecognition() {
       const video = this.$refs.videoPlayer;
       const canvas = this.$refs.snapshotCanvas;
       if (!video || !this.verifyStream) {
-        this.showMsg('摄像头未就绪！');
+        this.showMsg("摄像头未就绪！");
         return;
       }
       this.isRecognizing = true; // 禁用按钮
-      this.verifyResult = '';    // 清空上一次结果
+      this.verifyResult = ""; // 清空上一次结果
 
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext("2d");
       ctx.translate(canvas.width, 0);
       ctx.scale(-1, 1);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      const dataUrl = canvas.toDataURL('image/png');
+      const dataUrl = canvas.toDataURL("image/png");
 
       fetch(`${this.API_BASE}/verify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: dataUrl })
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: dataUrl }),
       })
-        .then(res => res.json())
-        .then(json => {
-          if (json.result === 'unknown') {
-            this.verifyResult = 'unknown';
+        .then((res) => res.json())
+        .then((json) => {
+          if (json.result === "unknown") {
+            this.verifyResult = "unknown";
             this.showUnknownModal = true;
           } else {
             this.verifyResult = json.result;
           }
         })
-        .catch(err => {
+        .catch((err) => {
           console.error(err);
-          this.showMsg('识别失败');
+          this.showMsg("识别失败");
         })
         .finally(() => {
           this.isRecognizing = false; // 无论成功失败，都恢复按钮
@@ -738,35 +826,35 @@ export default {
       this.showUnknownModal = false;
       this.stopVerifyCamera();
       this.isVerifying = false;
-      this.verifyResult = '';
+      this.verifyResult = "";
     },
     fetchFaces() {
       fetch(`${this.API_BASE}/faces`)
-        .then(r => r.json())
-        .then(j => {
+        .then((r) => r.json())
+        .then((j) => {
           this.facesList = j.faces || [];
         })
         .catch(console.error);
     },
     deleteFace(personId) {
       fetch(`${this.API_BASE}/faces/${personId}`, {
-        method: 'DELETE',
+        method: "DELETE",
       })
-        .then(res => {
+        .then((res) => {
           if (!res.ok) throw new Error(`删除失败: ${res.statusText}`);
           return res.json();
         })
         .then(() => {
-          this.showMsg('删除成功！');
+          this.showMsg("删除成功！");
           this.fetchFaces(); // 重新加载列表
         })
-        .catch(err => {
+        .catch((err) => {
           console.error(err);
-          this.showMsg('删除失败，请查看后端日志。');
+          this.showMsg("删除失败，请查看后端日志。");
         });
     },
     addFace(nameOrObj) {
-      const isObj = typeof nameOrObj === 'object';
+      const isObj = typeof nameOrObj === "object";
       const targetName = isObj ? nameOrObj.name : nameOrObj;
       const targetId = isObj ? nameOrObj.id : null;
       // 清除旧快照
@@ -778,19 +866,19 @@ export default {
       this.editingId = targetId;
       this.editingOriginalName = targetName; // 记录原始姓名
       // 跳转到录入 Tab
-      this.currentTab = 'face-enter';
+      this.currentTab = "face-enter";
     },
     viewAlbum(personObj) {
-      const id = typeof personObj === 'object' ? personObj.id : personObj;
+      const id = typeof personObj === "object" ? personObj.id : personObj;
       fetch(`${this.API_BASE}/faces/${id}/images`)
-        .then(r => r.json())
-        .then(j => {
+        .then((r) => r.json())
+        .then((j) => {
           this.albumImages = j.images || [];
           this.albumVisible = true;
         })
-        .catch(err => {
+        .catch((err) => {
           console.error(err);
-          this.showMsg('获取相册失败');
+          this.showMsg("获取相册失败");
         });
     },
     closeAlbum() {
@@ -803,14 +891,14 @@ export default {
       this.nameSaving = false;
       // 获取图片列表
       fetch(`${this.API_BASE}/faces/${person.id}/images`)
-        .then(r => r.json())
-        .then(j => {
+        .then((r) => r.json())
+        .then((j) => {
           this.editorImages = j.images || [];
           this.editorVisible = true;
         })
-        .catch(err => {
+        .catch((err) => {
           console.error(err);
-          this.showMsg('获取图片失败');
+          this.showMsg("获取图片失败");
         });
     },
     closeEditor() {
@@ -822,19 +910,19 @@ export default {
       if (!this.editorPersonId) return;
       this.nameSaving = true;
       fetch(`${this.API_BASE}/faces/${this.editorPersonId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: this.editorName })
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: this.editorName }),
       })
-        .then(r => r.json())
+        .then((r) => r.json())
         .then(() => {
           // 更新管理列表显示
           this.fetchFaces();
-          this.showMsg('ID 已更新');
+          this.showMsg("ID 已更新");
         })
-        .catch(err => {
+        .catch((err) => {
           console.error(err);
-          this.showMsg('更新失败');
+          this.showMsg("更新失败");
         })
         .finally(() => {
           this.nameSaving = false;
@@ -846,28 +934,30 @@ export default {
     },
     cancelDeleteImage() {
       this.deleteModalVisible = false;
-      this.pendingDeleteImage = '';
+      this.pendingDeleteImage = "";
     },
     confirmDeleteImageReal() {
       if (!this.pendingDeleteImage) return;
       // 从完整的 /api/face/images/xxx.png 中提取文件名
-      const filename = this.pendingDeleteImage.split('/').pop();
+      const filename = this.pendingDeleteImage.split("/").pop();
       fetch(`${this.API_BASE}/faces/${this.editorPersonId}/images/${filename}`, {
-        method: 'DELETE'
+        method: "DELETE",
       })
-        .then(r => r.json())
+        .then((r) => r.json())
         .then(() => {
           // 移除本地数组
-          this.editorImages = this.editorImages.filter(i => i !== this.pendingDeleteImage);
+          this.editorImages = this.editorImages.filter(
+            (i) => i !== this.pendingDeleteImage
+          );
           this.fetchFaces();
         })
-        .catch(err => {
+        .catch((err) => {
           console.error(err);
-          this.showMsg('删除失败');
+          this.showMsg("删除失败");
         })
         .finally(() => {
           this.deleteModalVisible = false;
-          this.pendingDeleteImage = '';
+          this.pendingDeleteImage = "";
         });
     },
     openFullImage(img) {
@@ -876,10 +966,10 @@ export default {
     },
     closeFullImage() {
       this.fullImageVisible = false;
-      this.fullImageSrc = '';
+      this.fullImageSrc = "";
     },
     clearSearch() {
-      this.searchQuery = '';
+      this.searchQuery = "";
     },
     showMsg(text) {
       this.msgModalText = text;
@@ -887,7 +977,7 @@ export default {
     },
     closeMsgModal() {
       this.msgModalVisible = false;
-      this.msgModalText = '';
+      this.msgModalText = "";
     },
     // ===== 用户删除弹窗相关 =====
     askDeleteFace(personId) {
@@ -896,13 +986,13 @@ export default {
     },
     cancelDeleteFace() {
       this.deleteFaceModalVisible = false;
-      this.pendingDeleteFaceId = '';
+      this.pendingDeleteFaceId = "";
     },
     confirmDeleteFaceReal() {
       if (!this.pendingDeleteFaceId) return;
       this.deleteFace(this.pendingDeleteFaceId);
       this.deleteFaceModalVisible = false;
-      this.pendingDeleteFaceId = '';
+      this.pendingDeleteFaceId = "";
     },
     // 取消当前拍摄，清空数据
     cancelCapture() {
@@ -912,34 +1002,36 @@ export default {
       this.captureCompleted = false;
       this.captureInProgress = false;
       this.progress = 0;
-      this.guidanceText = '准备...';
-      
+      this.guidanceText = "准备...";
+
       // 清空ID输入框
-      this.entryName = '';
-      
+      this.entryName = "";
+
       // 清除定时器
       if (this.captureInterval) {
         clearInterval(this.captureInterval);
         this.captureInterval = null;
       }
-      
+
       // 重置编辑状态
       this.editingId = null;
-      this.editingOriginalName = '';
+      this.editingOriginalName = "";
     },
   },
   mounted() {
     if (this.currentTab === 'face-enter') {
       this.startEntryCamera();
       this.startRealtimeFaceCheck(); // 初次加载即启动范围检测
+    } else if (this.currentTab === 'face-manage') {
+      this.fetchFaces(); // 管理员进入时直接加载人脸数据
     }
   },
   unmounted() {
     this.stopVerifyCamera();
     this.stopEntryCamera();
     this.stopRealtimeFaceCheck();
-  }
-}
+  },
+};
 </script>
 
 <style scoped>
@@ -1027,9 +1119,9 @@ export default {
 }
 
 .center-circle {
-   position: absolute;
-   top: 50%;
-   left: 50%;
+  position: absolute;
+  top: 50%;
+  left: 50%;
   transform: translate(-50%, -50%) rotate(90deg);
   width: 60%; /* 更窄 */
   height: 50%; /* 更高 */
@@ -1049,8 +1141,18 @@ export default {
   pointer-events: none;
   z-index: 1;
   /* 通过 mask 制造中空椭圆 */
-  -webkit-mask: radial-gradient(ellipse 30% 50% at 50% 50%, transparent 0%, transparent 60%, black 61%);
-  mask: radial-gradient(ellipse 30% 50% at 50% 50%, transparent 0%, transparent 60%, black 61%);
+  -webkit-mask: radial-gradient(
+    ellipse 30% 50% at 50% 50%,
+    transparent 0%,
+    transparent 60%,
+    black 61%
+  );
+  mask: radial-gradient(
+    ellipse 30% 50% at 50% 50%,
+    transparent 0%,
+    transparent 60%,
+    black 61%
+  );
 }
 .camera-feed img {
   max-width: 250px;
@@ -1102,8 +1204,8 @@ export default {
   gap: 5px;
 }
 .input-group input {
-    border: 1px solid #ccc;
-    padding: 5px;
+  border: 1px solid #ccc;
+  padding: 5px;
 }
 .btn {
   background-color: #0b2b40;
@@ -1288,18 +1390,18 @@ export default {
   background-color: #025aa5;
 }
 .img-close {
-  position:absolute;
-  top:2px;
-  right:4px;
-  color:#fff;
-  background:rgba(0,0,0,0.6);
-  border-radius:50%;
-  width:18px;
-  height:18px;
-  line-height:18px;
-  text-align:center;
-  cursor:pointer;
-  font-weight:bold;
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  cursor: pointer;
+  font-weight: bold;
 }
 .btn-cancel {
   background-color: #aaa;
@@ -1402,9 +1504,9 @@ export default {
 }
 
 .blink-indicator.detected {
-  background-color: #4CAF50;
+  background-color: #4caf50;
   color: white;
-  border-color: #4CAF50;
+  border-color: #4caf50;
   transform: scale(1.1);
 }
 
@@ -1413,5 +1515,38 @@ export default {
   font-weight: bold;
   color: #0b2b40;
   min-width: 30px;
+}
+
+/* --- Admin Theme Overrides --- */
+.admin-theme .sidebar {
+  background-color: #4a0e0e; /* 深红色 */
+}
+.admin-theme .sidebar-nav li:hover,
+.admin-theme .sidebar-nav li.active {
+  background-color: #631212; /* 深红色悬浮/激活 */
+}
+
+.admin-theme .btn {
+  background-color: #a43c3c; /* 红色系按钮 */
+}
+.admin-theme .btn:hover {
+  background-color: #bf4a4a;
+}
+.admin-theme .btn-delete {
+  background-color: #d9534f;
+}
+.admin-theme .btn-add {
+  background-color: #5cb85c; /* 保持绿色 */
+}
+.admin-theme .btn-edit {
+  background-color: #0275d8; /* 保持蓝色 */
+}
+
+.admin-theme .panel-header {
+  background-color: #4a0e0e;
+}
+
+.admin-theme .search-bar input {
+  background-color: #fff0f0;
 }
 </style>
