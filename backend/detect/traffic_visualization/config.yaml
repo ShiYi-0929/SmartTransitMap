@@ -1,0 +1,9 @@
+DATA_PATHS:
+  raw_data: 'data/raw'
+  processed_data: 'data/processed/dataset_processed.pkl'
+  sample_data: 'data/sample/dataset_sample.csv'
+
+  PROCESSING_PARAMS:
+  chunk_size: 10000
+  remove_duplicates: True
+  normalize_features: True

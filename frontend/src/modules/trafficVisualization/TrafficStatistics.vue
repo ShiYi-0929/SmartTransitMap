@@ -3,39 +3,39 @@
     <!-- 数据分析标题 -->
     <div class="bg-blue-800/40 backdrop-blur-md rounded-xl p-6 border border-blue-500/30">
       <div class="flex items-center justify-between">
-                 <div class="flex items-center">
-           <TrendingUp class="h-8 w-8 text-blue-400 mr-3" />
-           <div>
-             <h2 class="text-2xl font-bold text-white">数据分析中心</h2>
-             <p class="text-blue-200">深度分析交通数据趋势</p>
-           </div>
-         </div>
+        <div class="flex items-center">
+          <TrendingUp class="h-8 w-8 text-blue-400 mr-3" />
+          <div>
+            <h2 class="text-2xl font-bold text-white">数据分析中心</h2>
+            <p class="text-blue-200">深度分析交通数据趋势</p>
+          </div>
+        </div>
         
-                 <!-- 分析模块选择 -->
-         <div class="flex space-x-2">
-           <button 
-             @click="activeModule = 'overview'"
-             :class="[
-               'px-4 py-2 rounded-lg transition-all',
-               activeModule === 'overview' 
-                 ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg' 
-                 : 'bg-blue-700/30 text-blue-200 hover:bg-blue-600/40 hover:text-white'
-             ]"
-           >
-             总览分析
-           </button>
-           <button 
-             @click="activeModule = 'weekly'"
-             :class="[
-               'px-4 py-2 rounded-lg transition-all',
-               activeModule === 'weekly' 
-                 ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg' 
-                 : 'bg-blue-700/30 text-blue-200 hover:bg-blue-600/40 hover:text-white'
-             ]"
-           >
-             周客流量分析
-           </button>
-         </div>
+        <!-- 分析模块选择 -->
+        <div class="flex space-x-2">
+          <button 
+            @click="activeModule = 'overview'"
+            :class="[
+              'px-4 py-2 rounded-lg transition-all',
+              activeModule === 'overview' 
+                ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg' 
+                : 'bg-blue-700/30 text-blue-200 hover:bg-blue-600/40 hover:text-white'
+            ]"
+          >
+            总览分析
+          </button>
+          <button 
+            @click="activeModule = 'weekly'"
+            :class="[
+              'px-4 py-2 rounded-lg transition-all',
+              activeModule === 'weekly' 
+                ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg' 
+                : 'bg-blue-700/30 text-blue-200 hover:bg-blue-600/40 hover:text-white'
+            ]"
+          >
+            周客流量分析
+          </button>
+        </div>
       </div>
     </div>
 
@@ -48,12 +48,12 @@
             v-for="period in timePeriods" 
             :key="period.key"
             @click="selectedPeriod = period.key"
-                         :class="[
-               'px-4 py-2 rounded-lg transition-all',
-               selectedPeriod === period.key 
-                 ? 'bg-gradient-to-r from-blue-500 to-sky-500 text-white shadow-lg' 
-                 : 'bg-blue-700/30 text-blue-200 hover:bg-blue-600/40 hover:text-white'
-             ]"
+            :class="[
+              'px-4 py-2 rounded-lg transition-all',
+              selectedPeriod === period.key 
+                ? 'bg-gradient-to-r from-blue-500 to-sky-500 text-white shadow-lg' 
+                : 'bg-blue-700/30 text-blue-200 hover:bg-blue-600/40 hover:text-white'
+            ]"
           >
             {{ period.label }}
           </button>
@@ -68,8 +68,8 @@
           class="bg-blue-800/40 backdrop-blur-md rounded-xl p-6 border border-blue-500/30"
         >
           <div class="flex items-center justify-between">
-                         <div>
-               <p class="text-blue-200 text-sm">{{ metric.title }}</p>
+            <div>
+              <p class="text-blue-200 text-sm">{{ metric.title }}</p>
               <p class="text-2xl font-bold text-white">{{ metric.value }}</p>
               <div class="flex items-center mt-2">
                 <component 
@@ -87,23 +87,23 @@
       </div>
 
       <!-- 图表展示区域 -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="grid grid-cols-1 lg:grid-cols-1 gap-6">
         <!-- 时间流量趋势 -->
         <div class="bg-blue-800/40 backdrop-blur-md rounded-xl p-6 border border-blue-500/30">
-                     <div class="flex items-center justify-between mb-4">
-             <h3 class="text-lg font-semibold text-white">24小时流量趋势</h3>
-             <TrendingUp class="h-5 w-5 text-blue-400" />
-           </div>
-                     <div class="h-64 flex items-end space-x-1">
-             <div 
-               v-for="(value, index) in trafficData" 
-               :key="index"
-               class="bg-gradient-to-t from-blue-600 to-blue-400 rounded-t flex-1 transition-all hover:scale-105 hover:from-blue-500 hover:to-blue-300"
-               :style="{ height: `${(value / Math.max(...trafficData)) * 100}%` }"
-               :title="`${index}:00 - ${value} 车辆`"
-             ></div>
-           </div>
-                     <div class="flex justify-between text-xs text-blue-300 mt-2">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-white">24小时流量趋势</h3>
+            <TrendingUp class="h-5 w-5 text-blue-400" />
+          </div>
+          <div class="h-64 flex items-end space-x-1">
+            <div 
+              v-for="(value, index) in trafficData" 
+              :key="index"
+              class="bg-gradient-to-t from-blue-600 to-blue-400 rounded-t flex-1 transition-all hover:scale-105 hover:from-blue-500 hover:to-blue-300"
+              :style="{ height: `${(value / Math.max(...trafficData)) * 100}%` }"
+              :title="`${index}:00 - ${value} 车辆`"
+            ></div>
+          </div>
+          <div class="flex justify-between text-xs text-blue-300 mt-2">
             <span>00:00</span>
             <span>06:00</span>
             <span>12:00</span>
@@ -111,109 +111,107 @@
             <span>23:59</span>
           </div>
         </div>
-
-        <!-- 区域分布饼图 -->
-        <div class="bg-blue-800/40 backdrop-blur-md rounded-xl p-6 border border-blue-500/30">
-                     <div class="flex items-center justify-between mb-4">
-             <h3 class="text-lg font-semibold text-white">区域分布</h3>
-             <BarChart3 class="h-5 w-5 text-sky-400" />
-           </div>
-          <div class="h-64 flex items-center justify-center">
-            <div class="relative w-48 h-48">
-              <svg class="w-full h-full" viewBox="0 0 200 200">
-                <circle cx="100" cy="100" r="80" fill="none" stroke="#374151" stroke-width="2"/>
-                <g v-for="(area, index) in areaData" :key="area.name">
-                  <path 
-                    :d="generatePieSlice(index, area.percentage)"
-                    :fill="area.color"
-                    class="transition-all hover:opacity-80"
-                  />
-                </g>
-              </svg>
-              <div class="absolute inset-0 flex items-center justify-center">
-                <div class="text-center text-white">
-                  <div class="text-lg font-bold">总计</div>
-                  <div class="text-sm">100%</div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="grid grid-cols-2 gap-2 mt-4">
-                         <div v-for="area in areaData" :key="area.name" class="flex items-center">
-               <div :class="['w-3 h-3 rounded mr-2', area.colorClass]"></div>
-               <span class="text-xs text-blue-200">{{ area.name }} {{ area.percentage }}%</span>
-             </div>
-          </div>
-        </div>
       </div>
 
-      <!-- 热力图分析 -->
+      <!-- 区域统计排行 -->
       <div class="bg-blue-800/40 backdrop-blur-md rounded-xl p-6 border border-blue-500/30">
         <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-semibold text-white">热力图分析</h3>
-                     <div class="flex space-x-2">
-             <button class="px-3 py-1 bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-xs rounded shadow-lg">实时</button>
-             <button class="px-3 py-1 bg-blue-700/30 text-blue-200 text-xs rounded hover:bg-blue-600/40 hover:text-white transition-all">历史</button>
-           </div>
-        </div>
-        <div class="grid grid-cols-20 gap-1 h-40">
-          <div 
-            v-for="(value, index) in heatmapData" 
-            :key="index"
-            :class="['rounded transition-all hover:scale-110', getHeatmapColor(value)]"
-            :title="`强度: ${value}`"
-          ></div>
-        </div>
-        <div class="flex justify-between items-center mt-4">
-          <div class="flex items-center space-x-4">
-                         <span class="text-xs text-blue-300">低</span>
-                         <div class="flex space-x-1">
-               <div class="w-4 h-4 bg-blue-900 rounded"></div>
-               <div class="w-4 h-4 bg-blue-700 rounded"></div>
-               <div class="w-4 h-4 bg-blue-500 rounded"></div>
-               <div class="w-4 h-4 bg-sky-500 rounded"></div>
-               <div class="w-4 h-4 bg-indigo-500 rounded"></div>
-             </div>
-                         <span class="text-xs text-blue-300">高</span>
+          <h3 class="text-lg font-semibold text-white">区域流量排行</h3>
+          <div class="flex space-x-2">
+            <button 
+              @click="sortBy = 'vehicles'"
+              :class="['px-3 py-1 text-xs rounded transition-all', sortBy === 'vehicles' ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg' : 'bg-blue-700/30 text-blue-200 hover:bg-blue-600/40']"
+            >
+              按流量
+            </button>
+            <button 
+              @click="sortBy = 'speed'"
+              :class="['px-3 py-1 text-xs rounded transition-all', sortBy === 'speed' ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg' : 'bg-blue-700/30 text-blue-200 hover:bg-blue-600/40']"
+            >
+              按速度
+            </button>
+            <button class="px-3 py-1 bg-gradient-to-r from-sky-500 to-blue-500 text-white text-xs rounded shadow-lg hover:from-sky-600 hover:to-blue-600 transition-all">导出</button>
           </div>
-                     <span class="text-xs text-blue-300">最后更新: {{ new Date().toLocaleTimeString() }}</span>
-        </div>
-      </div>
-
-      <!-- 详细数据表格 -->
-      <div class="bg-blue-800/40 backdrop-blur-md rounded-xl p-6 border border-blue-500/30">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-semibold text-white">详细数据</h3>
-                     <div class="flex space-x-2">
-             <button class="px-3 py-1 bg-gradient-to-r from-sky-500 to-blue-500 text-white text-xs rounded shadow-lg hover:from-sky-600 hover:to-blue-600 transition-all">导出</button>
-             <button class="px-3 py-1 bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-xs rounded shadow-lg hover:from-blue-600 hover:to-indigo-600 transition-all">刷新</button>
-           </div>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
-                             <tr class="border-b border-blue-500/30">
-                                 <th class="text-left py-3 px-4 text-blue-200">时间</th>
-                 <th class="text-left py-3 px-4 text-blue-200">区域</th>
-                 <th class="text-left py-3 px-4 text-blue-200">车辆数</th>
-                 <th class="text-left py-3 px-4 text-blue-200">平均速度</th>
-                 <th class="text-left py-3 px-4 text-blue-200">状态</th>
+              <tr class="border-b border-blue-500/30">
+                <th class="text-left py-3 px-4 text-blue-200">排名</th>
+                <th class="text-left py-3 px-4 text-blue-200">区域名称</th>
+                <th class="text-left py-3 px-4 text-blue-200">总车辆数</th>
+                <th class="text-left py-3 px-4 text-blue-200">平均速度</th>
+                <th class="text-left py-3 px-4 text-blue-200">拥堵率</th>
+                <th class="text-left py-3 px-4 text-blue-200">流量等级</th>
               </tr>
             </thead>
-                         <tbody>
-               <tr v-for="row in tableData" :key="row.id" class="border-b border-blue-500/20 hover:bg-blue-700/20">
-                <td class="py-3 px-4 text-white">{{ row.time }}</td>
-                <td class="py-3 px-4 text-white">{{ row.area }}</td>
-                <td class="py-3 px-4 text-white">{{ row.vehicles }}</td>
-                <td class="py-3 px-4 text-white">{{ row.speed }}</td>
+            <tbody>
+              <tr v-for="(area, index) in sortedAreaData" :key="area.id" class="border-b border-blue-500/20 hover:bg-blue-700/20">
+                <td class="py-3 px-4 text-white">
+                  <div class="flex items-center">
+                    <span :class="['w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mr-2', getRankColor(index)]">
+                      {{ index + 1 }}
+                    </span>
+                  </div>
+                </td>
+                <td class="py-3 px-4 text-white font-medium">{{ area.name }}</td>
+                <td class="py-3 px-4 text-white">{{ area.totalVehicles.toLocaleString() }}</td>
+                <td class="py-3 px-4 text-white">{{ area.avgSpeed }} km/h</td>
                 <td class="py-3 px-4">
-                  <span :class="['px-2 py-1 rounded text-xs', getStatusColor(row.status)]">
-                    {{ row.status }}
+                  <div class="flex items-center">
+                    <div class="w-20 bg-blue-900/50 rounded-full h-2 mr-2">
+                      <div 
+                        class="h-full rounded-full" 
+                        :class="getCongestionColor(area.congestionRate)"
+                        :style="{ width: `${area.congestionRate}%` }"
+                      ></div>
+                    </div>
+                    <span class="text-white text-xs">{{ area.congestionRate }}%</span>
+                  </div>
+                </td>
+                <td class="py-3 px-4">
+                  <span :class="['px-2 py-1 rounded text-xs', getTrafficLevelColor(area.trafficLevel)]">
+                    {{ area.trafficLevel }}
                   </span>
                 </td>
               </tr>
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- 时间段统计 -->
+      <div class="bg-blue-800/40 backdrop-blur-md rounded-xl p-6 border border-blue-500/30">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-semibold text-white">高峰时段分析</h3>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div v-for="period in timePeriodStats" :key="period.name" class="bg-blue-700/30 rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+              <h4 class="text-white font-medium">{{ period.name }}</h4>
+              <span :class="['px-2 py-1 rounded text-xs', period.statusClass]">{{ period.status }}</span>
+            </div>
+            <div class="space-y-2">
+              <div class="flex justify-between text-sm">
+                <span class="text-blue-200">时间段:</span>
+                <span class="text-white">{{ period.timeRange }}</span>
+              </div>
+              <div class="flex justify-between text-sm">
+                <span class="text-blue-200">平均车流:</span>
+                <span class="text-white">{{ period.avgVehicles }} 辆/小时</span>
+              </div>
+              <div class="flex justify-between text-sm">
+                <span class="text-blue-200">平均速度:</span>
+                <span class="text-white">{{ period.avgSpeed }} km/h</span>
+              </div>
+              <div class="w-full bg-blue-900/50 rounded-full h-2 mt-3">
+                <div 
+                  class="h-full rounded-full bg-gradient-to-r from-blue-500 to-sky-400" 
+                  :style="{ width: `${(period.avgVehicles / 2000) * 100}%` }"
+                ></div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -227,17 +225,17 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { TrendingUp, TrendingDown, Car, Clock, Users, BarChart3 } from 'lucide-vue-next'
+import { TrendingUp, TrendingDown, Car, Clock, Users } from 'lucide-vue-next'
 import WeeklyPassengerFlow from '../../components/WeeklyPassengerFlow.vue'
 
 // 响应式数据
 const selectedPeriod = ref('today')
 const activeModule = ref('overview')
 
+// 删除了'month'选项，只保留今日和本周
 const timePeriods = [
   { key: 'today', label: '今日' },
-  { key: 'week', label: '本周' },
-  { key: 'month', label: '本月' }
+  { key: 'week', label: '本周' }
 ]
 
 const keyMetrics = ref([
@@ -249,35 +247,62 @@ const keyMetrics = ref([
 
 const trafficData = ref([20, 25, 30, 45, 60, 80, 95, 85, 70, 55, 40, 35, 30, 45, 65, 85, 90, 75, 60, 45, 35, 30, 25, 20])
 
-const areaData = ref([
-  { name: '市中心', percentage: 35, color: '#3b82f6', colorClass: 'bg-blue-500' },
-  { name: '商业区', percentage: 25, color: '#0ea5e9', colorClass: 'bg-sky-500' },
-  { name: '住宅区', percentage: 20, color: '#6366f1', colorClass: 'bg-indigo-500' },
-  { name: '工业区', percentage: 20, color: '#8b5cf6', colorClass: 'bg-purple-500' }
+// 排序方式
+const sortBy = ref('vehicles')
+
+// 区域统计数据
+const areaStatsData = ref([
+  { id: 1, name: '市中心核心区', totalVehicles: 45230, avgSpeed: 35.2, congestionRate: 78, trafficLevel: '重度拥堵' },
+  { id: 2, name: '商业购物区', totalVehicles: 38750, avgSpeed: 42.8, congestionRate: 65, trafficLevel: '中度拥堵' },
+  { id: 3, name: '住宅居民区', totalVehicles: 28650, avgSpeed: 55.1, congestionRate: 35, trafficLevel: '轻度拥堵' },
+  { id: 4, name: '工业开发区', totalVehicles: 19430, avgSpeed: 62.3, congestionRate: 25, trafficLevel: '基本畅通' },
+  { id: 5, name: '文教科研区', totalVehicles: 15820, avgSpeed: 58.7, congestionRate: 30, trafficLevel: '基本畅通' },
+  { id: 6, name: '交通枢纽区', totalVehicles: 52100, avgSpeed: 28.5, congestionRate: 85, trafficLevel: '严重拥堵' },
+  { id: 7, name: '休闲娱乐区', totalVehicles: 22340, avgSpeed: 48.9, congestionRate: 45, trafficLevel: '轻度拥堵' }
 ])
 
-const tableData = ref([
-  { id: 1, time: '08:00', area: '市中心', vehicles: 1250, speed: '35.2 km/h', status: '拥堵' },
-  { id: 2, time: '08:15', area: '商业区', vehicles: 890, speed: '42.8 km/h', status: '缓慢' },
-  { id: 3, time: '08:30', area: '住宅区', vehicles: 654, speed: '55.1 km/h', status: '正常' },
-  { id: 4, time: '08:45', area: '工业区', vehicles: 432, speed: '62.3 km/h', status: '畅通' },
-  { id: 5, time: '09:00', area: '市中心', vehicles: 1180, speed: '38.7 km/h', status: '拥堵' }
+// 时间段统计数据
+const timePeriodStats = ref([
+  {
+    name: '早高峰',
+    timeRange: '07:00-09:00',
+    avgVehicles: 1850,
+    avgSpeed: 32.5,
+    status: '拥堵',
+    statusClass: 'bg-red-500/20 text-red-400'
+  },
+  {
+    name: '晚高峰', 
+    timeRange: '17:00-19:00',
+    avgVehicles: 1920,
+    avgSpeed: 30.8,
+    status: '严重拥堵',
+    statusClass: 'bg-purple-500/20 text-purple-400'
+  },
+  {
+    name: '平峰时段',
+    timeRange: '10:00-16:00', 
+    avgVehicles: 980,
+    avgSpeed: 52.3,
+    status: '畅通',
+    statusClass: 'bg-green-500/20 text-green-400'
+  }
 ])
-
-// 生成热力图数据
-const heatmapData = ref(Array.from({ length: 400 }, () => Math.floor(Math.random() * 100)))
 
 // 计算属性
 const trafficDataPoints = computed(() => {
   return trafficData.value.map((value, index) => `${index * 10},${200 - (value * 2)}`).join(' ')
 })
 
-const pieChartData = computed(() => {
-  return areaData.value.map((area, index) => {
-    const startAngle = areaData.value.slice(0, index).reduce((sum, a) => sum + (a.percentage * 3.6), 0)
-    const endAngle = startAngle + (area.percentage * 3.6)
-    return { ...area, startAngle, endAngle }
-  })
+// 排序后的区域数据
+const sortedAreaData = computed(() => {
+  const data = [...areaStatsData.value]
+  if (sortBy.value === 'vehicles') {
+    return data.sort((a, b) => b.totalVehicles - a.totalVehicles)
+  } else if (sortBy.value === 'speed') {
+    return data.sort((a, b) => b.avgSpeed - a.avgSpeed)
+  }
+  return data
 })
 
 // 方法
@@ -285,38 +310,27 @@ const generateTrendLine = () => {
   return trafficDataPoints.value
 }
 
-const generatePieSlice = (index, percentage) => {
-  const radius = 80
-  const centerX = 100
-  const centerY = 100
-  
-  const startAngle = pieChartData.value.slice(0, index).reduce((sum, area) => sum + area.percentage, 0) * 3.6 - 90
-  const endAngle = startAngle + (percentage * 3.6)
-  
-  const startX = centerX + radius * Math.cos(startAngle * Math.PI / 180)
-  const startY = centerY + radius * Math.sin(startAngle * Math.PI / 180)
-  const endX = centerX + radius * Math.cos(endAngle * Math.PI / 180)
-  const endY = centerY + radius * Math.sin(endAngle * Math.PI / 180)
-  
-  const largeArcFlag = percentage > 27.78 ? 1 : 0
-  
-  return `M ${centerX} ${centerY} L ${startX} ${startY} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${endX} ${endY} Z`
+const getRankColor = (index) => {
+  if (index === 0) return 'bg-yellow-500 text-yellow-900'
+  if (index === 1) return 'bg-gray-300 text-gray-800'
+  if (index === 2) return 'bg-orange-400 text-orange-900'
+  return 'bg-blue-500 text-white'
 }
 
-const getHeatmapColor = (value) => {
-  if (value < 20) return 'bg-blue-900'
-  if (value < 40) return 'bg-blue-700'
-  if (value < 60) return 'bg-blue-500'
-  if (value < 80) return 'bg-sky-500'
-  return 'bg-indigo-500'
+const getCongestionColor = (rate) => {
+  if (rate >= 80) return 'bg-red-500'
+  if (rate >= 60) return 'bg-orange-500'
+  if (rate >= 40) return 'bg-yellow-500'
+  return 'bg-green-500'
 }
 
-const getStatusColor = (status) => {
-  switch (status) {
-    case '畅通': return 'bg-sky-500/20 text-sky-400'
-    case '正常': return 'bg-blue-500/20 text-blue-400'
-    case '缓慢': return 'bg-indigo-500/20 text-indigo-400'
-    case '拥堵': return 'bg-purple-500/20 text-purple-400'
+const getTrafficLevelColor = (level) => {
+  switch (level) {
+    case '基本畅通': return 'bg-green-500/20 text-green-400'
+    case '轻度拥堵': return 'bg-yellow-500/20 text-yellow-400'
+    case '中度拥堵': return 'bg-orange-500/20 text-orange-400'
+    case '重度拥堵': return 'bg-red-500/20 text-red-400'
+    case '严重拥堵': return 'bg-purple-500/20 text-purple-400'
     default: return 'bg-slate-500/20 text-slate-400'
   }
 }
@@ -385,4 +399,4 @@ onMounted(() => {
 .overflow-x-auto::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.3);
 }
-</style> 
+</style>
