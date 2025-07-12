@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>地图测试</title>
+    <script src="https://webapi.amap.com/maps?v=2.0&key=ac9b745946df9aee02cf0515319407df"></script>
+    <style>
+        #map { width: 100%; height: 400px; }
+        .controls { margin: 10px 0; }
+        button { margin: 5px; padding: 10px; }
+    </style>
+</head>
+<body>
+    <h1>济南出租车数据地图测试</h1>
+    <div class="controls">
+        <button onclick="addTestMarker()">添加测试标记</button>
+        <button onclick="addDataMarkers()">添加真实数据标记</button>
+        <button onclick="clearMap()">清除地图</button>
+    </div>
+    <div id="map"></div>
+    
+    <script>
+        let map;
+        let markers = [];
+        
+        // 初始化地图
+        map = new AMap.Map('map', {
+            zoom: 13,
+            center: [117.000923, 36.675807] // 济南市中心
+        });
+        
+        console.log('地图初始化完成');
+        
+        // 添加测试标记
+        function addTestMarker() {
+            const marker = new AMap.Marker({
+                position: [117.000923, 36.675807],
+                title: '测试标记 - 济南市中心'
+            });
+            
+            map.add(marker);
+            markers.push(marker);
+            console.log('测试标记已添加');
+        }
+        
+        // 添加真实数据标记
+        function addDataMarkers() {
+            // 模拟从后端获取的数据（这些是真实坐标）
+            const sampleData = [
+                {lng: 117.26221, lat: 36.51009, vehicleId: '1505311683'},
+                {lng: 116.92798, lat: 36.65152, vehicleId: '1505311458'},
+                {lng: 117.12348, lat: 36.68967, vehicleId: '1505311507'}
+            ];
+            
+            sampleData.forEach((point, index) => {
+                const marker = new AMap.Marker({
+                    position: [point.lng, point.lat],
+                    title: `车辆: ${point.vehicleId}`
+                });
+                
+                map.add(marker);
+                markers.push(marker);
+                console.log(`标记 ${index + 1} 已添加:`, point);
+            });
+            
+            // 调整视图包含所有标记
+            if (markers.length > 0) {
+                map.setFitView(markers);
+            }
+            
+            console.log(`共添加 ${sampleData.length} 个数据标记`);
+        }
+        
+        // 清除地图
+        function clearMap() {
+            if (markers.length > 0) {
+                map.remove(markers);
+                markers = [];
+                console.log('地图已清除');
+            }
+        }
+        
+        // 地图点击事件
+        map.on('click', function(e) {
+            console.log('点击位置:', e.lnglat);
+        });
+    </script>
+</body>
+</html> 

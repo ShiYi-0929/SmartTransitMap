@@ -325,23 +325,32 @@ const maxDate = "2013-09-18"
 
 // 计算属性
 const currentHeatmapStats = computed(() => {
-  if (!heatmapData.value.length) return { totalPoints: 0, maxDensity: 0 }
+  if (!heatmapData.value.length || !timeSlices.value.length) {
+    return { totalPoints: 0, maxDensity: 0 }
+  }
   
   const currentSlice = timeSlices.value[currentTimeIndex.value]
-  if (!currentSlice) return { totalPoints: 0, maxDensity: 0 }
+  if (!currentSlice || !currentSlice.data) {
+    return { totalPoints: 0, maxDensity: 0 }
+  }
   
+  const points = currentSlice.data
   return {
-    totalPoints: currentSlice.data.length,
-    maxDensity: Math.max(...currentSlice.data.map(p => p.count))
+    totalPoints: points.length,
+    maxDensity: points.length > 0 ? Math.max(...points.map(p => p.count)) : 0
   }
 })
 
 const overallStats = computed(() => {
-  if (!heatmapData.value.length) return []
+  const data = heatmapData.value
+  if (!data || data.length === 0) {
+    return []
+  }
   
-  const totalPoints = heatmapData.value.length
-  const avgDensity = heatmapData.value.reduce((sum, p) => sum + p.count, 0) / totalPoints
-  const maxDensity = Math.max(...heatmapData.value.map(p => p.count))
+  const totalPoints = data.length
+  const counts = data.map(p => p.count || 0)
+  const avgDensity = counts.reduce((sum, count) => sum + count, 0) / totalPoints
+  const maxDensity = Math.max(...counts)
   
   return [
     { label: '总数据点', value: totalPoints },
@@ -353,13 +362,16 @@ const overallStats = computed(() => {
 })
 
 const topHotspots = computed(() => {
-  if (!heatmapData.value.length) return []
+  const data = heatmapData.value
+  if (!data || data.length === 0) {
+    return []
+  }
   
-  return heatmapData.value
-    .sort((a, b) => b.count - a.count)
+  return [...data]
+    .sort((a, b) => (b.count || 0) - (a.count || 0))
     .slice(0, 5)
     .map(point => ({
-      density: point.count,
+      density: point.count || 0,
       coordinates: `${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`,
       lat: point.lat,
       lng: point.lng
@@ -367,12 +379,16 @@ const topHotspots = computed(() => {
 })
 
 const timeDistributionBars = computed(() => {
-  if (!timeSlices.value.length) return []
+  const slices = timeSlices.value
+  if (!slices || slices.length === 0) {
+    return []
+  }
   
-  const maxCount = Math.max(...timeSlices.value.map(slice => slice.data.length))
+  const counts = slices.map(slice => (slice.data || []).length)
+  const maxCount = Math.max(...counts, 1) // 避免除以0
   
-  return timeSlices.value.map(slice => ({
-    height: (slice.data.length / maxCount) * 100,
+  return slices.map((slice, index) => ({
+    height: ((slice.data || []).length / maxCount) * 100,
     label: slice.label
   }))
 })

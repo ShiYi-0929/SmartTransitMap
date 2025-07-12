@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>地图标记测试</title>
+    <script src="https://webapi.amap.com/maps?v=2.0&key=ac9b745946df9aee02cf0515319407df"></script>
+    <style>
+        #map-container {
+            width: 100%;
+            height: 600px;
+            border: 1px solid #ccc;
+        }
+        .info-panel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1000;
+        }
+        .controls {
+            margin: 10px 0;
+        }
+        button {
+            margin: 5px;
+            padding: 8px 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>地图标记显示测试</h1>
+    
+    <div class="controls">
+        <button onclick="addTestMarkers(50)">添加50个标记</button>
+        <button onclick="addTestMarkers(200)">添加200个标记</button>
+        <button onclick="addTestMarkers(1000)">添加1000个标记</button>
+        <button onclick="clearMarkers()">清除标记</button>
+    </div>
+    
+    <div style="position: relative;">
+        <div id="map-container"></div>
+        <div class="info-panel">
+            <div>标记数量: <span id="marker-count">0</span></div>
+            <div>地图中心: <span id="map-center">-</span></div>
+            <div>缩放级别: <span id="map-zoom">-</span></div>
+        </div>
+    </div>
+
+    <script>
+        let map;
+        let markers = [];
+        
+        // 初始化地图
+        function initMap() {
+            map = new AMap.Map('map-container', {
+                zoom: 13,
+                center: [117.000923, 36.675807], // 济南市中心
+                mapStyle: 'amap://styles/normal'
+            });
+            
+            map.on('complete', function() {
+                console.log('地图初始化完成');
+                updateInfo();
+            });
+            
+            map.on('zoomchange', updateInfo);
+            map.on('moveend', updateInfo);
+        }
+        
+        // 更新信息面板
+        function updateInfo() {
+            document.getElementById('marker-count').textContent = markers.length;
+            const center = map.getCenter();
+            document.getElementById('map-center').textContent = 
+                `${center.lng.toFixed(4)}, ${center.lat.toFixed(4)}`;
+            document.getElementById('map-zoom').textContent = map.getZoom();
+        }
+        
+        // 添加测试标记
+        function addTestMarkers(count) {
+            clearMarkers();
+            
+            console.log(`开始添加${count}个测试标记`);
+            const startTime = Date.now();
+            
+            // 济南市区坐标范围
+            const minLng = 116.8, maxLng = 117.3;
+            const minLat = 36.4, maxLat = 36.8;
+            
+            for (let i = 0; i < count; i++) {
+                const lng = minLng + Math.random() * (maxLng - minLng);
+                const lat = minLat + Math.random() * (maxLat - minLat);
+                const speed = Math.random() * 80; // 0-80 km/h
+                
+                // 根据速度设置颜色
+                let color = '#00cfff';
+                if (speed > 60) {
+                    color = '#ff4444';
+                } else if (speed > 30) {
+                    color = '#ffaa00';
+                } else if (speed > 10) {
+                    color = '#00ff00';
+                } else {
+                    color = '#888888';
+                }
+                
+                const marker = new AMap.Marker({
+                    position: [lng, lat],
+                    title: `车辆${i+1}: ${speed.toFixed(1)} km/h`,
+                    icon: new AMap.Icon({
+                        size: new AMap.Size(12, 12),
+                        image: `data:image/svg+xml;base64,${btoa(`
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <circle cx="6" cy="6" r="5" fill="${color}" stroke="#fff" stroke-width="1"/>
+                                <circle cx="6" cy="6" r="2" fill="#fff"/>
+                            </svg>
+                        `)}`,
+                        imageSize: new AMap.Size(12, 12)
+                    })
+                });
+                
+                markers.push(marker);
+            }
+            
+            // 批量添加到地图
+            map.add(markers);
+            
+            // 调整视图
+            if (markers.length > 0) {
+                map.setFitView(markers);
+            }
+            
+            const endTime = Date.now();
+            console.log(`添加${count}个标记完成，耗时: ${endTime - startTime}ms`);
+            
+            updateInfo();
+        }
+        
+        // 清除所有标记
+        function clearMarkers() {
+            if (markers.length > 0) {
+                map.remove(markers);
+                markers = [];
+                updateInfo();
+            }
+        }
+        
+        // 页面加载完成后初始化地图
+        window.onload = function() {
+            initMap();
+        };
+    </script>
+</body>
+</html> 

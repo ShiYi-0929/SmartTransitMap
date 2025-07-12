@@ -15,7 +15,9 @@ from collections import defaultdict
 
 from .models import (
     RoadSegment, RoadTrafficData, RoadSegmentStatistics, 
-    RoadNetworkAnalysis, SpeedDistribution, TrafficFlowPattern
+    RoadNetworkAnalysis, SpeedDistribution, TrafficFlowPattern,
+    TripDistanceClassification, OrderSpeedAnalysis, RoadSpeedHeatmap,
+    TripAnalysisStatistics, RoadSpeedAnalysisResult
 )
 
 logger = logging.getLogger(__name__)
@@ -482,3 +484,574 @@ class RoadAnalysisEngine:
         except Exception as e:
             logger.error(f"生成路网摘要时出错: {str(e)}")
             return {} 
+    
+    def analyze_trip_distance_classification(self, trajectory_data: pd.DataFrame) -> TripAnalysisStatistics:
+        """
+        分析路程距离分类：短途(<4km)、中途(4-8km)、长途(>8km)
+        统计每日占比，完成路程分析的可视化展示
+        """
+        try:
+            # 生成订单数据（基于轨迹数据推断）
+            orders_data = self._extract_trip_orders(trajectory_data)
+            
+            if not orders_data:
+                return TripAnalysisStatistics(
+                    time_range={"start": 0, "end": 0},
+                    daily_classifications=[],
+                    overall_stats={},
+                    trend_analysis={}
+                )
+            
+            orders_df = pd.DataFrame(orders_data)
+            
+            # 按日期分组统计
+            orders_df['date'] = pd.to_datetime(orders_df['start_time'], unit='s').dt.date
+            daily_classifications = []
+            
+            for date, daily_orders in orders_df.groupby('date'):
+                # 按距离分类
+                short_trips = len(daily_orders[daily_orders['distance_km'] < 4])
+                medium_trips = len(daily_orders[(daily_orders['distance_km'] >= 4) & 
+                                               (daily_orders['distance_km'] <= 8)])
+                long_trips = len(daily_orders[daily_orders['distance_km'] > 8])
+                total_trips = len(daily_orders)
+                
+                # 计算占比
+                short_percentage = (short_trips / total_trips * 100) if total_trips > 0 else 0
+                medium_percentage = (medium_trips / total_trips * 100) if total_trips > 0 else 0
+                long_percentage = (long_trips / total_trips * 100) if total_trips > 0 else 0
+                
+                daily_classifications.append(TripDistanceClassification(
+                    date=str(date),
+                    short_trips=short_trips,
+                    medium_trips=medium_trips,
+                    long_trips=long_trips,
+                    total_trips=total_trips,
+                    short_percentage=short_percentage,
+                    medium_percentage=medium_percentage,
+                    long_percentage=long_percentage,
+                    avg_distance=daily_orders['distance_km'].mean()
+                ))
+            
+            # 计算总体统计
+            total_short = sum(d.short_trips for d in daily_classifications)
+            total_medium = sum(d.medium_trips for d in daily_classifications)
+            total_long = sum(d.long_trips for d in daily_classifications)
+            total_all = sum(d.total_trips for d in daily_classifications)
+            
+            overall_stats = {
+                "total_trips": total_all,
+                "short_trips_total": total_short,
+                "medium_trips_total": total_medium,
+                "long_trips_total": total_long,
+                "overall_short_percentage": (total_short / total_all * 100) if total_all > 0 else 0,
+                "overall_medium_percentage": (total_medium / total_all * 100) if total_all > 0 else 0,
+                "overall_long_percentage": (total_long / total_all * 100) if total_all > 0 else 0,
+                "avg_daily_trips": total_all / len(daily_classifications) if daily_classifications else 0,
+                "overall_avg_distance": orders_df['distance_km'].mean()
+            }
+            
+            # 趋势分析
+            if len(daily_classifications) > 1:
+                dates = [d.date for d in daily_classifications]
+                short_percentages = [d.short_percentage for d in daily_classifications]
+                medium_percentages = [d.medium_percentage for d in daily_classifications]
+                long_percentages = [d.long_percentage for d in daily_classifications]
+                
+                trend_analysis = {
+                    "short_trip_trend": self._calculate_trend(short_percentages),
+                    "medium_trip_trend": self._calculate_trend(medium_percentages),
+                    "long_trip_trend": self._calculate_trend(long_percentages),
+                    "most_common_distance_category": self._get_dominant_category(overall_stats),
+                    "distance_stability": self._calculate_stability(
+                        [d.avg_distance for d in daily_classifications]
+                    )
+                }
+            else:
+                trend_analysis = {
+                    "insufficient_data": "需要至少2天的数据来进行趋势分析"
+                }
+            
+            time_range = {
+                "start": orders_df['start_time'].min(),
+                "end": orders_df['end_time'].max()
+            }
+            
+            logger.info(f"完成路程分析，共分析 {total_all} 个订单，{len(daily_classifications)} 天数据")
+            
+            return TripAnalysisStatistics(
+                time_range=time_range,
+                daily_classifications=daily_classifications,
+                overall_stats=overall_stats,
+                trend_analysis=trend_analysis
+            )
+            
+        except Exception as e:
+            logger.error(f"分析路程距离分类时出错: {str(e)}")
+            return TripAnalysisStatistics(
+                time_range={"start": 0, "end": 0},
+                daily_classifications=[],
+                overall_stats={"error": str(e)},
+                trend_analysis={}
+            )
+    
+    def analyze_order_based_road_speed(self, trajectory_data: pd.DataFrame, 
+                                     include_short_medium_only: bool = True,
+                                     spatial_resolution: float = 0.001,
+                                     min_orders_per_location: int = 5,
+                                     congestion_threshold: dict = None) -> RoadSpeedAnalysisResult:
+        """
+        基于订单数据的道路速度分析
+        利用中短途订单的预估距离与起止时间，计算订单的平均速度
+        完成道路速度的可视化展示
+        """
+        try:
+            if congestion_threshold is None:
+                congestion_threshold = {
+                    "free": 40,      # >40km/h 为畅通
+                    "moderate": 25,  # 25-40km/h 为缓慢  
+                    "heavy": 15,     # 15-25km/h 为拥堵
+                    "jam": 0         # <15km/h 为严重拥堵
+                }
+            
+            # 生成订单数据
+            orders_data = self._extract_trip_orders(trajectory_data)
+            
+            if not orders_data:
+                return RoadSpeedAnalysisResult(
+                    time_range={"start": 0, "end": 0},
+                    speed_data=[],
+                    heatmap_data=[],
+                    congestion_summary={},
+                    road_speed_trends=[]
+                )
+            
+            orders_df = pd.DataFrame(orders_data)
+            
+            # 筛选中短途订单（如果需要）
+            if include_short_medium_only:
+                orders_df = orders_df[orders_df['distance_km'] <= 8]
+                logger.info(f"筛选中短途订单（≤8km），保留 {len(orders_df)} 个订单")
+            
+            # 计算订单速度
+            orders_df['speed_kmh'] = (orders_df['distance_km'] / 
+                                    (orders_df['duration_min'] / 60)).fillna(0)
+            
+            # 过滤异常速度（0-100 km/h）
+            orders_df = orders_df[(orders_df['speed_kmh'] > 0) & (orders_df['speed_kmh'] <= 100)]
+            
+            # 空间网格化分析
+            speed_data = []
+            heatmap_data = []
+            
+            # 按空间网格聚合
+            grid_data = self._aggregate_by_spatial_grid(orders_df, spatial_resolution)
+            
+            for grid_key, grid_orders in grid_data.items():
+                if len(grid_orders) >= min_orders_per_location:
+                    lat, lng = self._grid_key_to_coords(grid_key, spatial_resolution)
+                    
+                    speeds = grid_orders['speed_kmh']
+                    avg_speed = speeds.mean()
+                    speed_variance = speeds.var()
+                    order_count = len(grid_orders)
+                    
+                    # 确定拥堵等级
+                    congestion_level = self._classify_congestion_level(avg_speed, congestion_threshold)
+                    
+                    # 确定道路类型
+                    avg_distance = grid_orders['distance_km'].mean()
+                    road_type = "short_medium_trip" if avg_distance <= 8 else "long_trip"
+                    
+                    # 计算置信度（基于订单数量）
+                    confidence_score = min(1.0, order_count / 20)  # 20个订单以上置信度为1
+                    
+                    # 添加到速度分析数据
+                    speed_analysis = OrderSpeedAnalysis(
+                        timestamp=grid_orders['start_time'].mean(),
+                        location={"lat": lat, "lng": lng},
+                        order_count=order_count,
+                        avg_speed=avg_speed,
+                        speed_variance=speed_variance,
+                        congestion_level=congestion_level,
+                        road_type=road_type,
+                        confidence_score=confidence_score
+                    )
+                    speed_data.append(speed_analysis)
+                    
+                    # 添加到热力图数据
+                    # 拥堵程度越高，热力图强度越大
+                    intensity = self._speed_to_intensity(avg_speed, congestion_threshold)
+                    
+                    heatmap_point = RoadSpeedHeatmap(
+                        lat=lat,
+                        lng=lng,
+                        speed=avg_speed,
+                        intensity=intensity,
+                        order_count=order_count,
+                        congestion_level=congestion_level
+                    )
+                    heatmap_data.append(heatmap_point)
+            
+            # 生成拥堵摘要统计
+            congestion_summary = self._generate_congestion_summary(speed_data, orders_df)
+            
+            # 生成道路速度趋势
+            road_speed_trends = self._generate_speed_trends(orders_df)
+            
+            time_range = {
+                "start": orders_df['start_time'].min(),
+                "end": orders_df['end_time'].max()
+            }
+            
+            logger.info(f"完成订单速度分析，生成 {len(speed_data)} 个网格点，{len(heatmap_data)} 个热力图点")
+            
+            return RoadSpeedAnalysisResult(
+                time_range=time_range,
+                speed_data=speed_data,
+                heatmap_data=heatmap_data,
+                congestion_summary=congestion_summary,
+                road_speed_trends=road_speed_trends
+            )
+            
+        except Exception as e:
+            logger.error(f"分析订单速度时出错: {str(e)}")
+            return RoadSpeedAnalysisResult(
+                time_range={"start": 0, "end": 0},
+                speed_data=[],
+                heatmap_data=[],
+                congestion_summary={"error": str(e)},
+                road_speed_trends=[]
+            )
+    
+    def _extract_trip_orders(self, trajectory_data: pd.DataFrame) -> List[Dict]:
+        """从轨迹数据中提取订单信息"""
+        try:
+            orders_data = []
+            
+            # 添加调试信息
+            total_vehicles = trajectory_data['vehicle_id'].nunique()
+            logger.info(f"开始处理 {total_vehicles} 辆车的轨迹数据")
+            
+            # 按车辆分组处理
+            processed_vehicles = 0
+            for vehicle_id in trajectory_data['vehicle_id'].unique():
+                vehicle_data = trajectory_data[trajectory_data['vehicle_id'] == vehicle_id].copy()
+                vehicle_data = vehicle_data.sort_values('timestamp')
+                
+                if len(vehicle_data) < 2:
+                    continue
+                
+                processed_vehicles += 1
+                if processed_vehicles <= 3:  # 只调试前3辆车
+                    logger.info(f"处理车辆 {vehicle_id}: {len(vehicle_data)} 条记录")
+                    logger.info(f"时间范围: {vehicle_data['timestamp'].min()} - {vehicle_data['timestamp'].max()}")
+                
+                # 检测行程段（基于停车时间间隔）
+                time_gaps = vehicle_data['timestamp'].diff()
+                # 处理时间间隔：如果是数值类型，直接比较；如果是时间类型，转换为秒
+                if pd.api.types.is_numeric_dtype(time_gaps):
+                    # 数值类型时间戳，直接比较秒数
+                    # 采样数据间隔可能很大，所以使用更大的间隔来分割行程
+                    trip_breaks = time_gaps > 3600  # 1小时间隔认为是新行程
+                    if processed_vehicles <= 3:
+                        logger.info(f"车辆 {vehicle_id} 时间间隔: {time_gaps.dropna().head(5).tolist()}")
+                        logger.info(f"车辆 {vehicle_id} 行程分割点: {trip_breaks.sum()} 个")
+                else:
+                    # pandas时间类型，使用Timedelta
+                    trip_breaks = time_gaps > pd.Timedelta(seconds=3600)
+                
+                trip_id = 0
+                current_trip_start = 0
+                
+                for i, is_break in enumerate(trip_breaks):
+                    # 跳过第一个NaN值
+                    if i == 0:
+                        continue
+                        
+                    if is_break or i == len(vehicle_data) - 1:
+                        # 结束当前行程
+                        if i > current_trip_start:
+                            trip_data = vehicle_data.iloc[current_trip_start:i+1]
+                            order = self._create_order_from_trip(trip_data, vehicle_id, trip_id)
+                            if order:
+                                orders_data.append(order)
+                        
+                        trip_id += 1
+                        current_trip_start = i
+                
+                # 处理最后一个行程段
+                if current_trip_start < len(vehicle_data) - 1:
+                    trip_data = vehicle_data.iloc[current_trip_start:]
+                    order = self._create_order_from_trip(trip_data, vehicle_id, trip_id)
+                    if order:
+                        orders_data.append(order)
+            
+            logger.info(f"从 {trajectory_data['vehicle_id'].nunique()} 辆车的轨迹中提取了 {len(orders_data)} 个订单")
+            return orders_data
+            
+        except Exception as e:
+            logger.error(f"提取订单信息时出错: {str(e)}")
+            return []
+    
+    def _create_order_from_trip(self, trip_data: pd.DataFrame, vehicle_id: str, trip_id: int) -> Optional[Dict]:
+        """从行程数据创建订单"""
+        try:
+            if len(trip_data) < 2:
+                return None
+            
+            start_point = trip_data.iloc[0]
+            end_point = trip_data.iloc[-1]
+            
+            start_time = start_point['timestamp']
+            end_time = end_point['timestamp']
+            # 处理时间戳：如果是pandas时间戳，转换为Unix时间戳
+            if hasattr(start_time, 'timestamp'):
+                start_timestamp = start_time.timestamp()
+                end_timestamp = end_time.timestamp()
+            else:
+                # 如果已经是Unix时间戳
+                start_timestamp = float(start_time)
+                end_timestamp = float(end_time)
+            duration_min = (end_timestamp - start_timestamp) / 60
+            
+            # 过滤过短的行程（小于1分钟）- 放宽条件
+            if duration_min < 1:
+                logger.debug(f"过滤过短行程: {duration_min:.2f}分钟 < 1分钟")
+                return None
+            
+            # 计算距离
+            start_lat = start_point['latitude']
+            start_lng = start_point['longitude']
+            end_lat = end_point['latitude']
+            end_lng = end_point['longitude']
+            
+            distance_km = self._calculate_distance(start_lat, start_lng, end_lat, end_lng)
+            
+            # 过滤过短的距离（小于0.05km）- 放宽条件
+            if distance_km < 0.05:
+                logger.debug(f"过滤过短距离: {distance_km:.3f}km < 0.05km")
+                return None
+            
+            # 调试信息：记录成功创建的订单
+            logger.debug(f"创建订单: 车辆{vehicle_id}, 行程{trip_id}, 距离{distance_km:.2f}km, 时长{duration_min:.2f}分钟")
+            
+            return {
+                'order_id': f"{vehicle_id}_{trip_id}",
+                'vehicle_id': vehicle_id,
+                'start_time': start_timestamp,
+                'end_time': end_timestamp,
+                'duration_min': duration_min,
+                'distance_km': distance_km,
+                'start_lat': start_lat,
+                'start_lng': start_lng,
+                'end_lat': end_lat,
+                'end_lng': end_lng
+            }
+            
+        except Exception as e:
+            logger.error(f"创建订单时出错: {str(e)}")
+            return None
+    
+    def _aggregate_by_spatial_grid(self, orders_df: pd.DataFrame, resolution: float) -> Dict:
+        """按空间网格聚合订单数据"""
+        try:
+            grid_data = defaultdict(list)
+            
+            for _, order in orders_df.iterrows():
+                # 使用起点坐标进行网格化
+                grid_lat = round(order['start_lat'] / resolution) * resolution
+                grid_lng = round(order['start_lng'] / resolution) * resolution
+                grid_key = f"{grid_lat:.6f},{grid_lng:.6f}"
+                
+                grid_data[grid_key].append(order)
+            
+            # 转换为DataFrame格式
+            result = {}
+            for grid_key, orders in grid_data.items():
+                result[grid_key] = pd.DataFrame(orders)
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"空间网格聚合时出错: {str(e)}")
+            return {}
+    
+    def _grid_key_to_coords(self, grid_key: str, resolution: float) -> Tuple[float, float]:
+        """将网格键转换为坐标"""
+        try:
+            lat_str, lng_str = grid_key.split(',')
+            lat = float(lat_str) + resolution / 2  # 网格中心点
+            lng = float(lng_str) + resolution / 2
+            return lat, lng
+        except Exception:
+            return 0.0, 0.0
+    
+    def _classify_congestion_level(self, speed: float, threshold: dict) -> str:
+        """根据速度分类拥堵等级"""
+        if speed >= threshold["free"]:
+            return "free"
+        elif speed >= threshold["moderate"]:
+            return "moderate"
+        elif speed >= threshold["heavy"]:
+            return "heavy"
+        else:
+            return "jam"
+    
+    def _speed_to_intensity(self, speed: float, threshold: dict) -> float:
+        """将速度转换为热力图强度（0-1）"""
+        max_speed = threshold["free"]
+        # 速度越低，强度越高（表示拥堵程度）
+        intensity = max(0, min(1, (max_speed - speed) / max_speed))
+        return intensity
+    
+    def _generate_congestion_summary(self, speed_data: List[OrderSpeedAnalysis], 
+                                   orders_df: pd.DataFrame) -> Dict[str, Any]:
+        """生成拥堵摘要统计"""
+        try:
+            if not speed_data:
+                return {}
+            
+            # 按拥堵等级统计
+            congestion_counts = defaultdict(int)
+            total_locations = len(speed_data)
+            
+            for data in speed_data:
+                congestion_counts[data.congestion_level] += 1
+            
+            # 整体速度统计
+            all_speeds = [data.avg_speed for data in speed_data]
+            
+            summary = {
+                "total_analysis_locations": total_locations,
+                "congestion_distribution": {
+                    level: {
+                        "count": count,
+                        "percentage": (count / total_locations * 100) if total_locations > 0 else 0
+                    }
+                    for level, count in congestion_counts.items()
+                },
+                "overall_avg_speed": np.mean(all_speeds) if all_speeds else 0,
+                "speed_statistics": {
+                    "min_speed": min(all_speeds) if all_speeds else 0,
+                    "max_speed": max(all_speeds) if all_speeds else 0,
+                    "median_speed": np.median(all_speeds) if all_speeds else 0,
+                    "std_speed": np.std(all_speeds) if all_speeds else 0
+                },
+                "high_confidence_locations": len([d for d in speed_data if d.confidence_score > 0.7]),
+                "total_orders_analyzed": len(orders_df)
+            }
+            
+            return summary
+            
+        except Exception as e:
+            logger.error(f"生成拥堵摘要时出错: {str(e)}")
+            return {"error": str(e)}
+    
+    def _generate_speed_trends(self, orders_df: pd.DataFrame) -> List[Dict[str, Any]]:
+        """生成道路速度趋势分析"""
+        try:
+            # 按小时分组分析趋势
+            orders_df['hour'] = pd.to_datetime(orders_df['start_time'], unit='s').dt.hour
+            hourly_trends = []
+            
+            for hour in range(24):
+                hour_orders = orders_df[orders_df['hour'] == hour]
+                if len(hour_orders) > 0:
+                    avg_speed = hour_orders['speed_kmh'].mean()
+                    order_count = len(hour_orders)
+                    
+                    # 判断高峰时段
+                    is_peak = hour in [7, 8, 9, 17, 18, 19]  # 早晚高峰
+                    
+                    hourly_trends.append({
+                        "hour": hour,
+                        "avg_speed": avg_speed,
+                        "order_count": order_count,
+                        "is_peak_hour": is_peak,
+                        "speed_category": self._classify_congestion_level(
+                            avg_speed, {"free": 40, "moderate": 25, "heavy": 15, "jam": 0}
+                        )
+                    })
+            
+            return hourly_trends
+            
+        except Exception as e:
+            logger.error(f"生成速度趋势时出错: {str(e)}")
+            return []
+    
+    def _calculate_trend(self, values: List[float]) -> str:
+        """计算趋势方向"""
+        if len(values) < 2:
+            return "insufficient_data"
+        
+        # 简单线性趋势
+        x = list(range(len(values)))
+        if len(values) > 1:
+            slope = np.polyfit(x, values, 1)[0]
+            if slope > 0.5:
+                return "increasing"
+            elif slope < -0.5:
+                return "decreasing"
+            else:
+                return "stable"
+        return "stable"
+    
+    def _get_dominant_category(self, overall_stats: Dict) -> str:
+        """获取占主导地位的距离类别"""
+        short_pct = overall_stats.get("overall_short_percentage", 0)
+        medium_pct = overall_stats.get("overall_medium_percentage", 0)
+        long_pct = overall_stats.get("overall_long_percentage", 0)
+        
+        max_pct = max(short_pct, medium_pct, long_pct)
+        
+        if max_pct == short_pct:
+            return "short_distance"
+        elif max_pct == medium_pct:
+            return "medium_distance"
+        else:
+            return "long_distance"
+    
+    def _calculate_stability(self, values: List[float]) -> str:
+        """计算数据稳定性"""
+        if len(values) < 2:
+            return "insufficient_data"
+        
+        cv = np.std(values) / np.mean(values) if np.mean(values) != 0 else 0
+        
+        if cv < 0.1:
+            return "very_stable"
+        elif cv < 0.2:
+            return "stable"
+        elif cv < 0.3:
+            return "moderate"
+        else:
+            return "unstable"
+    
+    def _calculate_distance(self, lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+        """
+        计算两点间的距离（公里）
+        使用Haversine公式
+        """
+        try:
+            import math
+            
+            # 将角度转换为弧度
+            lat1, lng1, lat2, lng2 = map(math.radians, [lat1, lng1, lat2, lng2])
+            
+            # Haversine公式
+            dlat = lat2 - lat1
+            dlng = lng2 - lng1
+            a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlng/2)**2
+            c = 2 * math.asin(math.sqrt(a))
+            
+            # 地球半径（公里）
+            r = 6371
+            
+            return c * r
+            
+        except Exception:
+            # 如果计算失败，使用简化的欧几里得距离
+            dlat = lat2 - lat1
+            dlng = lng2 - lng1
+            return math.sqrt(dlat**2 + dlng**2) * 111  # 大约转换为公里

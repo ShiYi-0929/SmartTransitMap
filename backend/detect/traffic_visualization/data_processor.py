@@ -176,15 +176,29 @@ class TrafficDataProcessor:
         
         # 计算每个车辆应该采样的数量
         n_vehicles = len(vehicle_groups)
-        samples_per_vehicle = max(1, target_size // n_vehicles)
+        # 确保每个车辆至少保留2条记录以便进行路程分析
+        min_samples_per_vehicle = 2
+        samples_per_vehicle = max(min_samples_per_vehicle, target_size // n_vehicles)
+        
+        # 如果总需求超过目标大小，则按比例调整
+        total_demand = n_vehicles * samples_per_vehicle
+        if total_demand > target_size:
+            # 优先保证每个车辆至少有2条记录
+            samples_per_vehicle = max(min_samples_per_vehicle, target_size // n_vehicles)
         
         for vehicle_id, group in vehicle_groups:
             if len(group) <= samples_per_vehicle:
                 sampled_groups.append(group)
             else:
-                # 时间均匀采样
-                indices = np.linspace(0, len(group)-1, samples_per_vehicle, dtype=int)
-                sampled_groups.append(group.iloc[indices])
+                # 时间均匀采样，确保包含起点和终点
+                if samples_per_vehicle == 2:
+                    # 如果只能保留2条记录，选择第一条和最后一条
+                    selected_indices = [0, len(group)-1]
+                else:
+                    # 时间均匀采样
+                    indices = np.linspace(0, len(group)-1, samples_per_vehicle, dtype=int)
+                    selected_indices = indices
+                sampled_groups.append(group.iloc[selected_indices])
         
         result = pd.concat(sampled_groups, ignore_index=True)
         print(f"   采样结果: {len(result)} 条记录 ({len(df)} -> {len(result)})")
@@ -496,11 +510,18 @@ class TrafficDataProcessor:
             # 提取轨迹点
             track_points = []
             for _, row in group.iterrows():
+                # 尝试获取速度字段（可能有不同的名称）
+                speed = None
+                for speed_field in ['SPEED', 'speed', 'speed_kmh']:
+                    if speed_field in row:
+                        speed = row[speed_field]
+                        break
+                
                 point = TrackPoint(
                     lat=row['LAT'] / 1e5,
                     lng=row['LON'] / 1e5,
                     timestamp=row['UTC'],
-                    speed=row.get('SPEED'),
+                    speed=speed,
                     direction=row.get('DIRECTION'),
                     status=row.get('STATUS')
                 )
@@ -1429,6 +1450,7 @@ class TrafficDataProcessor:
         """
         try:
             from .road_analysis_engine import RoadAnalysisEngine
+            from .models import TripAnalysisStatistics, RoadSpeedAnalysisResult
             
             if df.empty:
                 return {"error": "数据为空"}
