@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>轨迹查询功能测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .test-button:hover {
+            background: #0056b3;
+        }
+        .result {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .success {
+            border-color: #28a745;
+            background: #d4edda;
+        }
+        .error {
+            border-color: #dc3545;
+            background: #f8d7da;
+        }
+    </style>
+</head>
+<body>
+    <h1>轨迹查询功能测试</h1>
+    
+    <div class="test-section">
+        <h2>1. 测试获取示例车辆</h2>
+        <button class="test-button" onclick="testGetSampleVehicles()">获取示例车辆</button>
+        <div id="sample-vehicles-result" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>2. 测试轨迹查询</h2>
+        <div>
+            <label>车辆ID: <input type="text" id="vehicle-id" placeholder="输入车辆ID"></label>
+            <button class="test-button" onclick="testTrackQuery()">查询轨迹</button>
+        </div>
+        <div id="track-query-result" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>3. 测试数据处理</h2>
+        <button class="test-button" onclick="testDataProcessing()">测试数据处理</button>
+        <div id="data-processing-result" class="result"></div>
+    </div>
+
+    <script>
+        const BASE_URL = 'http://127.0.0.1:8000';
+        
+        async function testGetSampleVehicles() {
+            const resultDiv = document.getElementById('sample-vehicles-result');
+            resultDiv.textContent = '测试中...';
+            
+            try {
+                const response = await fetch(`${BASE_URL}/api/traffic/sample-vehicles?start_time=1378857600&end_time=1378861200&limit=10`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    resultDiv.className = 'result success';
+                    resultDiv.textContent = `✅ 成功获取示例车辆\n` +
+                        `车辆数量: ${data.vehicles.length}\n` +
+                        `总车辆数: ${data.total_vehicles}\n` +
+                        `示例车辆:\n${data.vehicles.map(v => 
+                            `- ${v.vehicle_id}: ${v.point_count}个点, 持续${Math.round(v.duration/60)}分钟`
+                        ).join('\n')}`;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.textContent = `❌ 获取失败: ${data.message}`;
+                }
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `❌ 请求失败: ${error.message}`;
+            }
+        }
+        
+        async function testTrackQuery() {
+            const vehicleId = document.getElementById('vehicle-id').value;
+            const resultDiv = document.getElementById('track-query-result');
+            
+            if (!vehicleId) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = '❌ 请输入车辆ID';
+                return;
+            }
+            
+            resultDiv.textContent = '查询中...';
+            
+            try {
+                const response = await fetch(`${BASE_URL}/api/traffic/visualization?` + new URLSearchParams({
+                    start_time: 1378857600,
+                    end_time: 1378861200,
+                    view_type: 'trajectory',
+                    vehicle_id: vehicleId,
+                    map_style: 'normal'
+                }));
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    resultDiv.className = 'result success';
+                    resultDiv.textContent = `✅ 轨迹查询成功\n` +
+                        `数据点数量: ${data.data.length}\n` +
+                        `车辆ID: ${vehicleId}\n` +
+                        `前3个数据点:\n${data.data.slice(0, 3).map(p => 
+                            `- 时间: ${new Date(p.timestamp * 1000).toLocaleString()}, 位置: (${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}), 速度: ${p.speed || 'N/A'}`
+                        ).join('\n')}`;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.textContent = `❌ 查询失败: ${data.message}`;
+                }
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `❌ 请求失败: ${error.message}`;
+            }
+        }
+        
+        function testDataProcessing() {
+            const resultDiv = document.getElementById('data-processing-result');
+            
+            // 模拟轨迹数据
+            const mockData = [
+                { vehicle_id: 'TEST001', lat: 36.651, lng: 117.120, timestamp: 1378857600, speed: 25 },
+                { vehicle_id: 'TEST001', lat: 36.652, lng: 117.121, timestamp: 1378857660, speed: 30 },
+                { vehicle_id: 'TEST001', lat: 36.653, lng: 117.122, timestamp: 1378857720, speed: 35 },
+                { vehicle_id: 'TEST002', lat: 36.654, lng: 117.123, timestamp: 1378857600, speed: 20 },
+                { vehicle_id: 'TEST002', lat: 36.655, lng: 117.124, timestamp: 1378857660, speed: 25 }
+            ];
+            
+            try {
+                const processedTracks = processTrajectoryData(mockData);
+                
+                resultDiv.className = 'result success';
+                resultDiv.textContent = `✅ 数据处理成功\n` +
+                    `轨迹数量: ${processedTracks.length}\n` +
+                    `处理结果:\n${processedTracks.map(track => 
+                        `- 车辆${track.vehicle_id}: ${track.points.length}个点, 距离${track.distance.toFixed(2)}km`
+                    ).join('\n')}`;
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `❌ 数据处理失败: ${error.message}`;
+            }
+        }
+        
+        // 数据处理函数（从TrackQuery.vue复制）
+        function processTrajectoryData(rawData) {
+            if (!rawData || rawData.length === 0) {
+                return [];
+            }
+            
+            // 按车辆ID分组
+            const vehicleGroups = {};
+            rawData.forEach(point => {
+                const vehicleId = point.vehicle_id || point.vehicleId;
+                if (!vehicleGroups[vehicleId]) {
+                    vehicleGroups[vehicleId] = [];
+                }
+                vehicleGroups[vehicleId].push(point);
+            });
+            
+            // 转换为轨迹格式
+            const tracks = [];
+            for (const [vehicleId, points] of Object.entries(vehicleGroups)) {
+                if (points.length < 2) continue;
+                
+                // 按时间排序
+                points.sort((a, b) => (a.timestamp || a.UTC) - (b.timestamp || b.UTC));
+                
+                // 计算轨迹距离
+                let totalDistance = 0;
+                for (let i = 1; i < points.length; i++) {
+                    const prev = points[i - 1];
+                    const curr = points[i];
+                    const distance = calculateDistance(prev.lat, prev.lng, curr.lat, curr.lng);
+                    totalDistance += distance;
+                }
+                
+                const track = {
+                    vehicle_id: vehicleId,
+                    points: points.map(p => ({
+                        lng: p.lng || p.lon,
+                        lat: p.lat,
+                        timestamp: p.timestamp || p.UTC,
+                        speed: p.speed || 0
+                    })),
+                    start_time: points[0].timestamp || points[0].UTC,
+                    end_time: points[points.length - 1].timestamp || points[points.length - 1].UTC,
+                    distance: totalDistance
+                };
+                
+                tracks.push(track);
+            }
+            
+            return tracks;
+        }
+        
+        // 计算两点间距离（公里）
+        function calculateDistance(lat1, lng1, lat2, lng2) {
+            const R = 6371; // 地球半径（公里）
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLng = (lng2 - lng1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLng/2) * Math.sin(dLng/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+        
+        // 页面加载时自动测试获取示例车辆
+        window.onload = function() {
+            setTimeout(testGetSampleVehicles, 1000);
+        };
+    </script>
+</body>
+</html> 

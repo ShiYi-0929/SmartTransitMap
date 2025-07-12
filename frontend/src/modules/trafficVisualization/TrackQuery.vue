@@ -31,12 +31,38 @@
         </div>
         <div class="space-y-2">
           <label class="text-sm text-blue-200">车辆ID（精确查询）</label>
-          <input 
-            v-model="queryParams.vehicleId"
-            type="text" 
-            placeholder="输入具体车辆ID"
-            class="input-tech placeholder:text-blue-300"
-          />
+          <div class="flex space-x-2">
+            <input 
+              v-model="queryParams.vehicleId"
+              type="text" 
+              placeholder="输入具体车辆ID"
+              class="input-tech placeholder:text-blue-300 flex-1"
+            />
+            <button 
+              @click="loadSampleVehicles"
+              :disabled="loadingVehicles"
+              class="btn-tech-small whitespace-nowrap"
+            >
+              {{ loadingVehicles ? '加载中...' : '获取示例' }}
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 示例车辆列表 -->
+      <div v-if="sampleVehicles.length > 0" class="mb-4">
+        <label class="text-sm text-blue-200 mb-2 block">示例车辆（点击选择）</label>
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+          <button 
+            v-for="vehicle in sampleVehicles" 
+            :key="vehicle.id"
+            @click="selectVehicle(vehicle)"
+            :class="queryParams.vehicleId === vehicle.id ? 'bg-blue-500 text-white' : 'bg-gray-700 text-blue-200 hover:bg-gray-600'"
+            class="p-2 rounded text-sm transition-colors"
+          >
+            {{ vehicle.id }}
+            <div class="text-xs opacity-75">{{ vehicle.points }}点</div>
+          </button>
         </div>
       </div>
       
@@ -213,12 +239,14 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { Route, Search, X, Play, Download } from 'lucide-vue-next'
-import { getTrackData } from '@/api/traffic'
+import { getTrafficVisualization, getSampleVehicles } from '@/api/traffic'
 
 // 响应式数据
 const loading = ref(false)
+const loadingVehicles = ref(false)
 const trackData = ref([])
 const selectedTrackDetails = ref(null)
+const sampleVehicles = ref([])
 
 const queryParams = ref({
   startTime: '2013-09-13T08:00',
@@ -277,11 +305,114 @@ const initMap = () => {
   }
 }
 
+// 获取示例车辆
+const loadSampleVehicles = async () => {
+  loadingVehicles.value = true
+  
+  try {
+    const startTime = Math.floor(new Date(queryParams.value.startTime).getTime() / 1000)
+    const endTime = Math.floor(new Date(queryParams.value.endTime).getTime() / 1000)
+    
+    const response = await getSampleVehicles(startTime, endTime, 20)
+    
+    if (response.data.success) {
+      sampleVehicles.value = response.data.vehicles.map(v => ({
+        id: v.vehicle_id,
+        points: v.point_count,
+        firstTime: v.first_time,
+        lastTime: v.last_time
+      }))
+      console.log('🚗 获取示例车辆成功:', sampleVehicles.value)
+    } else {
+      console.warn('获取示例车辆失败:', response.data.message)
+    }
+  } catch (error) {
+    console.error('获取示例车辆失败:', error)
+  } finally {
+    loadingVehicles.value = false
+  }
+}
+
+// 选择车辆
+const selectVehicle = (vehicle) => {
+  queryParams.value.vehicleId = vehicle.id
+  console.log('🚗 选择车辆:', vehicle.id)
+}
+
+// 处理轨迹数据
+const processTrajectoryData = (rawData) => {
+  if (!rawData || rawData.length === 0) {
+    return []
+  }
+  
+  // 按车辆ID分组
+  const vehicleGroups = {}
+  rawData.forEach(point => {
+    const vehicleId = point.vehicle_id || point.vehicleId
+    if (!vehicleGroups[vehicleId]) {
+      vehicleGroups[vehicleId] = []
+    }
+    vehicleGroups[vehicleId].push(point)
+  })
+  
+  // 转换为轨迹格式
+  const tracks = []
+  for (const [vehicleId, points] of Object.entries(vehicleGroups)) {
+    if (points.length < 2) continue
+    
+    // 按时间排序
+    points.sort((a, b) => (a.timestamp || a.UTC) - (b.timestamp || b.UTC))
+    
+    // 计算轨迹距离
+    let totalDistance = 0
+    for (let i = 1; i < points.length; i++) {
+      const prev = points[i - 1]
+      const curr = points[i]
+      const distance = calculateDistance(prev.lat, prev.lng, curr.lat, curr.lng)
+      totalDistance += distance
+    }
+    
+    const track = {
+      vehicle_id: vehicleId,
+      points: points.map(p => ({
+        lng: p.lng || p.lon,
+        lat: p.lat,
+        timestamp: p.timestamp || p.UTC,
+        speed: p.speed || 0
+      })),
+      start_time: points[0].timestamp || points[0].UTC,
+      end_time: points[points.length - 1].timestamp || points[points.length - 1].UTC,
+      distance: totalDistance
+    }
+    
+    tracks.push(track)
+  }
+  
+  return tracks
+}
+
+// 计算两点间距离（公里）
+const calculateDistance = (lat1, lng1, lat2, lng2) => {
+  const R = 6371 // 地球半径（公里）
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng/2) * Math.sin(dLng/2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+  return R * c
+}
+
 const queryTracks = async () => {
   if (!queryParams.value.startTime || !queryParams.value.endTime) {
     alert('请选择查询时间范围')
-      return
-    }
+    return
+  }
+  
+  if (!queryParams.value.vehicleId) {
+    alert('请输入车辆ID或选择示例车辆')
+    return
+  }
     
   loading.value = true
   
@@ -289,10 +420,32 @@ const queryTracks = async () => {
     const startTime = Math.floor(new Date(queryParams.value.startTime).getTime() / 1000)
     const endTime = Math.floor(new Date(queryParams.value.endTime).getTime() / 1000)
     
-    const response = await getTrackData(startTime, endTime, queryParams.value.vehicleId || null)
+    console.log('🚗 查询轨迹参数:', {
+      startTime,
+      endTime,
+      vehicleId: queryParams.value.vehicleId,
+      startDate: new Date(startTime * 1000).toISOString(),
+      endDate: new Date(endTime * 1000).toISOString()
+    })
+    
+    // 使用可视化API获取特定车辆的轨迹数据
+    const response = await getTrafficVisualization(
+      startTime,
+      endTime,
+      'trajectory',  // 轨迹视图
+      queryParams.value.vehicleId,
+      'normal'
+    )
     
     if (response.data.success) {
-      trackData.value = response.data.tracks || []
+      const rawData = response.data.data || []
+      console.log('🚗 轨迹原始数据:', rawData)
+      
+      // 将原始数据转换为轨迹格式
+      const processedTracks = processTrajectoryData(rawData)
+      trackData.value = processedTracks
+      
+      console.log('🚗 处理后的轨迹数据:', processedTracks)
       renderTracks()
     } else {
       alert('查询失败：' + response.data.message)
@@ -337,25 +490,60 @@ const renderTracks = () => {
       // 起点
       const startMarker = new window.AMap.Marker({
         position: [startPoint.lng, startPoint.lat],
-        title: `车辆${track.vehicle_id} - 起点`,
+        title: `车辆${track.vehicle_id} - 起点\n时间: ${formatTime(startPoint.timestamp)}`,
         icon: new window.AMap.Icon({
-          size: new window.AMap.Size(20, 20),
-          image: 'https://webapi.amap.com/theme/v1.3/markers/n/start.png'
+          size: new window.AMap.Size(24, 24),
+          image: `data:image/svg+xml;base64,${btoa(`
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="10" fill="#00ff00" stroke="#fff" stroke-width="2"/>
+              <text x="12" y="16" text-anchor="middle" fill="#fff" font-size="12" font-weight="bold">S</text>
+            </svg>
+          `)}`,
+          imageSize: new window.AMap.Size(24, 24)
         })
       })
       
       // 终点
       const endMarker = new window.AMap.Marker({
         position: [endPoint.lng, endPoint.lat],
-        title: `车辆${track.vehicle_id} - 终点`,
+        title: `车辆${track.vehicle_id} - 终点\n时间: ${formatTime(endPoint.timestamp)}`,
         icon: new window.AMap.Icon({
-          size: new window.AMap.Size(20, 20),
-          image: 'https://webapi.amap.com/theme/v1.3/markers/n/end.png'
+          size: new window.AMap.Size(24, 24),
+          image: `data:image/svg+xml;base64,${btoa(`
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="10" fill="#ff4444" stroke="#fff" stroke-width="2"/>
+              <text x="12" y="16" text-anchor="middle" fill="#fff" font-size="12" font-weight="bold">E</text>
+            </svg>
+          `)}`,
+          imageSize: new window.AMap.Size(24, 24)
         })
       })
       
       map.add([startMarker, endMarker])
       markers.push(startMarker, endMarker)
+      
+      // 添加轨迹上的一些关键点标记
+      if (displayOptions.value.showSpeed && track.points.length > 4) {
+        const keyPoints = track.points.filter((_, index) => index % Math.floor(track.points.length / 4) === 0)
+        keyPoints.forEach(point => {
+          const speedColor = point.speed > 30 ? '#ff6b6b' : point.speed > 15 ? '#ffa500' : '#4ecdc4'
+          const speedMarker = new window.AMap.Marker({
+            position: [point.lng, point.lat],
+            title: `速度: ${point.speed.toFixed(1)} km/h\n时间: ${formatTime(point.timestamp)}`,
+            icon: new window.AMap.Icon({
+              size: new window.AMap.Size(12, 12),
+              image: `data:image/svg+xml;base64,${btoa(`
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="6" cy="6" r="5" fill="${speedColor}" stroke="#fff" stroke-width="1"/>
+                </svg>
+              `)}`,
+              imageSize: new window.AMap.Size(12, 12)
+            })
+          })
+          map.add(speedMarker)
+          markers.push(speedMarker)
+        })
+      }
     }
   })
   
@@ -384,8 +572,60 @@ const highlightTrack = (vehicleId) => {
 }
 
 const playAnimation = () => {
-  // 实现轨迹动画播放
-  alert('轨迹动画功能开发中...')
+  if (trackData.value.length === 0) {
+    alert('没有轨迹数据可播放')
+    return
+  }
+  
+  // 选择第一条轨迹进行动画播放
+  const track = trackData.value[0]
+  if (!track.points || track.points.length < 2) {
+    alert('轨迹数据不足，无法播放动画')
+    return
+  }
+  
+  // 清除现有的动画标记
+  const existingAnimationMarkers = markers.filter(m => m.getTitle && m.getTitle().includes('动画'))
+  existingAnimationMarkers.forEach(marker => map.remove(marker))
+  
+  // 创建动画标记
+  const animationMarker = new window.AMap.Marker({
+    position: [track.points[0].lng, track.points[0].lat],
+    title: `车辆${track.vehicle_id} - 动画播放`,
+    icon: new window.AMap.Icon({
+      size: new window.AMap.Size(16, 16),
+      image: `data:image/svg+xml;base64,${btoa(`
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="8" cy="8" r="6" fill="#00cfff" stroke="#fff" stroke-width="2"/>
+          <circle cx="8" cy="8" r="3" fill="#fff"/>
+        </svg>
+      `)}`,
+      imageSize: new window.AMap.Size(16, 16)
+    })
+  })
+  
+  map.add(animationMarker)
+  markers.push(animationMarker)
+  
+  // 播放动画
+  let currentIndex = 0
+  const animationInterval = setInterval(() => {
+    if (currentIndex >= track.points.length) {
+      clearInterval(animationInterval)
+      return
+    }
+    
+    const point = track.points[currentIndex]
+    animationMarker.setPosition([point.lng, point.lat])
+    animationMarker.setTitle(`车辆${track.vehicle_id} - 动画播放\n时间: ${formatTime(point.timestamp)}\n速度: ${point.speed.toFixed(1)} km/h`)
+    
+    // 地图跟随
+    map.setCenter([point.lng, point.lat])
+    
+    currentIndex++
+  }, 500) // 每500ms移动一次
+  
+  alert('轨迹动画开始播放，地图将跟随车辆移动')
 }
 
 const exportTrack = () => {
@@ -435,6 +675,10 @@ const resetView = () => {
 
 onMounted(() => {
   initMap()
+  // 自动加载示例车辆
+  setTimeout(() => {
+    loadSampleVehicles()
+  }, 1000)
 })
 </script>
 

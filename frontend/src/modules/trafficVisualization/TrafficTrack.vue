@@ -35,7 +35,7 @@
             <input 
               v-model="queryParams.vehicleId"
               type="text" 
-              placeholder="输入具体车辆ID，如: 粤A12345"
+              placeholder="输入具体车辆ID，如: 15053114280"
               class="input-tech placeholder:text-blue-300 flex-1"
             />
             <button 
@@ -49,16 +49,13 @@
           <!-- 示例车辆下拉列表 -->
           <div v-if="sampleVehicles.length > 0" class="mt-2">
             <select 
-              @change="selectSampleVehicle($event.target.value)"
+              v-model="selectedSampleVehicle" 
+              @change="selectSampleVehicle($event.target.value)" 
               class="input-tech text-sm"
             >
               <option value="">选择示例车辆...</option>
-              <option 
-                v-for="vehicle in sampleVehicles" 
-                :key="vehicle.vehicle_id"
-                :value="vehicle.vehicle_id"
-              >
-                {{ vehicle.description }}
+              <option v-for="vehicle in sampleVehicles" :key="vehicle.vehicle_id" :value="vehicle.vehicle_id">
+                车辆 {{ vehicle.vehicle_id }} ({{ vehicle.data_points || vehicle.point_count || 0 }}个数据点)
               </option>
             </select>
           </div>
@@ -269,7 +266,9 @@ const loading = ref(false)
 const loadingSamples = ref(false)
 const trackData = ref([])
 const selectedTrackDetails = ref(null)
+// 保证 sampleVehicles 只来源于 API
 const sampleVehicles = ref([])
+const selectedSampleVehicle = ref('')
 
 const queryParams = ref({
   startTime: '2013-09-13T08:00',
@@ -414,10 +413,11 @@ async function queryTracks() {
     console.log('性能模式:', queryParams.value.dataSize)
     
     const response = await getTrackData(params)
+    console.log('🚀 API响应:', response.data)
     
-    if (response.data.success && response.data.data) {
+    if (response.data.success && response.data.tracks) {
       // 处理轨迹数据
-      processTrackData(response.data.data)
+      processTrackData(response.data.tracks)
       // 在地图上显示轨迹
       displayTracksOnMap()
       
@@ -675,53 +675,17 @@ function exportTrack() {
 async function loadSampleVehicles() {
   loadingSamples.value = true
   sampleVehicles.value = [] // 清空之前的数据
-  
   try {
-    // 将当前时间范围转换为时间戳
     const startTimeStamp = new Date(queryParams.value.startTime).getTime() / 1000
     const endTimeStamp = new Date(queryParams.value.endTime).getTime() / 1000
-    
-    console.log('🚗 正在获取示例车辆，时间范围:', queryParams.value.startTime, '~', queryParams.value.endTime)
-    
-    // 限制请求的车辆数量以提高速度
     const response = await getSampleVehicles(startTimeStamp, endTimeStamp, 15)
-    
     if (response && response.data && response.data.success && Array.isArray(response.data.vehicles)) {
+      // 只用API返回的真实数据
       sampleVehicles.value = response.data.vehicles
-      console.log('✅ 获取到示例车辆:', sampleVehicles.value.length, '个')
-      
-      // 显示获取结果
-      if (sampleVehicles.value.length > 0) {
-        console.log('🎯 推荐车辆:', sampleVehicles.value[0].vehicle_id)
-      }
-      
-      // 如果使用了采样模式，给用户提示
-      if (response.data.sampling_mode) {
-        console.log('⚡', response.data.sampling_mode)
-      }
     } else {
-      console.warn('❌ API响应格式异常:', response?.data)
-      const errorMsg = response?.data?.message || '获取示例车辆失败'
-      
-      // 根据错误类型给出具体建议
-      if (errorMsg.includes('未找到符合条件的数据')) {
-        alert('当前时间段没有车辆数据，请尝试选择其他时间范围（推荐：2013-09-13 08:00 至 12:00）')
-      } else {
-        alert(errorMsg)
-      }
       sampleVehicles.value = []
     }
   } catch (error) {
-    console.error('❌ 获取示例车辆失败:', error)
-    
-    // 根据错误类型给出具体建议
-    if (error.code === 'NETWORK_ERROR' || error.message.includes('Network Error')) {
-      alert('网络连接失败，请检查网络后重试')
-    } else if (error.response?.status === 500) {
-      alert('服务器处理超时，请尝试缩短时间范围后重试')
-    } else {
-      alert('获取示例车辆失败，请稍后重试')
-    }
     sampleVehicles.value = []
   } finally {
     loadingSamples.value = false
@@ -732,7 +696,6 @@ async function loadSampleVehicles() {
 function selectSampleVehicle(vehicleId) {
   if (vehicleId) {
     queryParams.value.vehicleId = vehicleId
-    console.log('选择了车辆:', vehicleId)
   }
 }
 

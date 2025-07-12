@@ -19,7 +19,14 @@ from .models import (
     SpatioTemporalAnalysis, RoadAnalysisRequest, RoadAnalysisResponse,
     RoadSegmentResponse, RoadTrafficResponse, RoadVisualizationResponse,
     RoadSegment, RoadTrafficData, RoadSegmentStatistics, 
-    RoadNetworkAnalysis, SpeedDistribution, TrafficFlowPattern
+    RoadNetworkAnalysis, SpeedDistribution, TrafficFlowPattern,
+    SmartPassengerRequest, SmartPassengerResponse, WeatherImpactRequest,
+    WeatherImpactResponse, TaxiDemandRequest, TaxiDemandResponse,
+    PassengerVisualizationResponse, WeatherData, PassengerFlowData,
+    TaxiDemandData, WeatherImpactAnalysis, TaxiSupplyDemand,
+    TripAnalysisRequest, TripAnalysisResponse, TripAnalysisStatistics,
+    OrderSpeedAnalysisRequest, OrderSpeedAnalysisResponse, 
+    TripDistanceClassification, OrderSpeedAnalysis
 )
 import numpy as np
 import logging
@@ -304,11 +311,21 @@ async def get_traffic_visualization(
                 df_sampled = df.sample(sample_size) if len(df) > sample_size else df
                 data = []
                 for _, row in df_sampled.iterrows():
+                    # 计算速度（如果没有预计算的速度，则从GPS数据计算）
+                    speed = 0.0
+                    if "SPEED" in row and pd.notna(row["SPEED"]):
+                        speed = float(row["SPEED"])
+                    elif "speed" in row and pd.notna(row["speed"]):
+                        speed = float(row["speed"])
+                    elif "speed_kmh" in row and pd.notna(row["speed_kmh"]):
+                        speed = float(row["speed_kmh"])
+                    
                     point = {
                         "lng": float(row["LON"]) / 1e5,
                         "lat": float(row["LAT"]) / 1e5,
                         "vehicle_id": str(row["COMMADDR"]),  # 确保转换为字符串
-                        "timestamp": int(row["UTC"])  # 确保转换为Python int
+                        "timestamp": int(row["UTC"]),  # 确保转换为Python int
+                        "speed": speed  # 添加速度字段
                     }
                     data.append(point)
                 print(f"生成了 {len(data)} 个分布点")
@@ -412,24 +429,56 @@ async def get_heatmap_data(
 async def get_track(
     start_time: float = Query(..., description="开始时间戳（UTC）"),
     end_time: float = Query(..., description="结束时间戳（UTC）"),
-    vehicle_id: Optional[str] = Query(None, description="车辆ID，可选")
+    vehicle_id: Optional[str] = Query(None, description="车辆ID，可选"),
+    view_type: str = Query("trajectory", description="视图类型：trajectory, path, stops"),
+    performance_mode: str = Query("normal", description="性能模式：fast, medium, full"),
+    max_points: int = Query(5000, description="最大返回点数")
 ):
     """
     按时间段和车辆ID查询车辆轨迹数据。
+    支持性能模式和最大点数限制。
     """
     try:
+        print(f"🚗 轨迹查询参数: 时间={start_time}-{end_time}, 车辆={vehicle_id}, 模式={performance_mode}, 最大点数={max_points}")
+        
         # 加载数据
         df = data_processor.load_data(start_time, end_time, vehicle_id)
         
         if df.empty:
+            print(f"⚠️ 未找到车辆 {vehicle_id} 在时间段 {start_time}-{end_time} 的数据")
             return TracksResponse(
                 success=False,
-                message="未找到符合条件的数据",
+                message=f"未找到车辆 {vehicle_id} 在指定时间段的数据",
                 tracks=[]
             )
         
+        print(f"✅ 成功加载数据: {len(df)} 条记录")
+        
+        # 根据性能模式采样数据
+        if performance_mode == "fast" and len(df) > max_points:
+            # 快速模式：均匀采样
+            sample_ratio = max_points / len(df)
+            df = df.sample(frac=sample_ratio)
+            print(f"⚡ 快速模式: 采样后 {len(df)} 条记录")
+        elif performance_mode == "medium" and len(df) > max_points:
+            # 中等模式：保留关键点的采样
+            # 这里简化为随机采样，实际可以用更复杂的算法
+            sample_ratio = max_points / len(df)
+            df = df.sample(frac=sample_ratio)
+            print(f"📊 中等模式: 采样后 {len(df)} 条记录")
+        
         # 生成轨迹数据
         tracks = data_processor.generate_track_data(df, vehicle_id)
+        
+        if not tracks:
+            print(f"⚠️ 轨迹生成失败: 车辆 {vehicle_id}")
+            return TracksResponse(
+                success=False,
+                message=f"未能生成车辆 {vehicle_id} 的轨迹数据",
+                tracks=[]
+            )
+        
+        print(f"✅ 轨迹生成成功: {len(tracks)} 条轨迹, 共 {sum(len(t.points) for t in tracks)} 个点")
         
         # 构造响应
         return TracksResponse(
@@ -437,6 +486,9 @@ async def get_track(
             tracks=tracks
         )
     except Exception as e:
+        import traceback
+        print(f"❌ 轨迹查询失败: {str(e)}")
+        print(traceback.format_exc())
         return TracksResponse(
             success=False,
             message=f"获取轨迹数据失败: {str(e)}",
@@ -835,24 +887,25 @@ async def get_sample_vehicles_from_preprocessed(start_time: float, end_time: flo
 def get_static_sample_vehicles(start_time: float, end_time: float, limit: int):
     """
     提供静态的示例车辆列表作为后备方案
+    使用真实数据格式的数字车辆ID
     """
-    # 基于真实数据的常见车辆ID
+    # 基于真实数据的常见车辆ID（数字格式）
     static_vehicles = [
-        {"vehicle_id": "粤A12345", "data_points": 150, "description": "车辆 粤A12345 (150个数据点)"},
-        {"vehicle_id": "粤A67890", "data_points": 120, "description": "车辆 粤A67890 (120个数据点)"},
-        {"vehicle_id": "粤B11111", "data_points": 200, "description": "车辆 粤B11111 (200个数据点)"},
-        {"vehicle_id": "粤A22222", "data_points": 180, "description": "车辆 粤A22222 (180个数据点)"},
-        {"vehicle_id": "粤A33333", "data_points": 160, "description": "车辆 粤A33333 (160个数据点)"},
-        {"vehicle_id": "粤B44444", "data_points": 140, "description": "车辆 粤B44444 (140个数据点)"},
-        {"vehicle_id": "粤A55555", "data_points": 190, "description": "车辆 粤A55555 (190个数据点)"},
-        {"vehicle_id": "粤A66666", "data_points": 170, "description": "车辆 粤A66666 (170个数据点)"},
-        {"vehicle_id": "粤B77777", "data_points": 130, "description": "车辆 粤B77777 (130个数据点)"},
-        {"vehicle_id": "粤A88888", "data_points": 210, "description": "车辆 粤A88888 (210个数据点)"},
-        {"vehicle_id": "粤A99999", "data_points": 155, "description": "车辆 粤A99999 (155个数据点)"},
-        {"vehicle_id": "粤B12345", "data_points": 175, "description": "车辆 粤B12345 (175个数据点)"},
-        {"vehicle_id": "粤A54321", "data_points": 165, "description": "车辆 粤A54321 (165个数据点)"},
-        {"vehicle_id": "粤B98765", "data_points": 145, "description": "车辆 粤B98765 (145个数据点)"},
-        {"vehicle_id": "粤A13579", "data_points": 185, "description": "车辆 粤A13579 (185个数据点)"}
+        {"vehicle_id": "15053114280", "data_points": 150, "description": "车辆 15053114280 (150个数据点)"},
+        {"vehicle_id": "15053114281", "data_points": 120, "description": "车辆 15053114281 (120个数据点)"},
+        {"vehicle_id": "15053114282", "data_points": 200, "description": "车辆 15053114282 (200个数据点)"},
+        {"vehicle_id": "15053114283", "data_points": 180, "description": "车辆 15053114283 (180个数据点)"},
+        {"vehicle_id": "15053114284", "data_points": 160, "description": "车辆 15053114284 (160个数据点)"},
+        {"vehicle_id": "15053114285", "data_points": 140, "description": "车辆 15053114285 (140个数据点)"},
+        {"vehicle_id": "15053114286", "data_points": 190, "description": "车辆 15053114286 (190个数据点)"},
+        {"vehicle_id": "15053114287", "data_points": 170, "description": "车辆 15053114287 (170个数据点)"},
+        {"vehicle_id": "15053114288", "data_points": 130, "description": "车辆 15053114288 (130个数据点)"},
+        {"vehicle_id": "15053114289", "data_points": 210, "description": "车辆 15053114289 (210个数据点)"},
+        {"vehicle_id": "15053114290", "data_points": 155, "description": "车辆 15053114290 (155个数据点)"},
+        {"vehicle_id": "15053114291", "data_points": 175, "description": "车辆 15053114291 (175个数据点)"},
+        {"vehicle_id": "15053114292", "data_points": 165, "description": "车辆 15053114292 (165个数据点)"},
+        {"vehicle_id": "15053114293", "data_points": 145, "description": "车辆 15053114293 (145个数据点)"},
+        {"vehicle_id": "15053114294", "data_points": 185, "description": "车辆 15053114294 (185个数据点)"}
     ]
     
     # 返回指定数量的车辆
@@ -860,11 +913,11 @@ def get_static_sample_vehicles(start_time: float, end_time: float, limit: int):
     
     return {
         "success": True,
-        "message": f"提供 {len(selected_vehicles)} 个示例车辆（静态列表）",
+        "message": f"提供 {len(selected_vehicles)} 个示例车辆（静态列表，数字格式）",
         "vehicles": selected_vehicles,
         "time_range": f"{start_time} - {end_time}",
         "total_vehicles": len(static_vehicles),
-        "data_source": "静态示例数据（后备模式）"
+        "data_source": "静态示例数据（后备模式，已修正为数字格式）"
     }
 
 @router.get("/anomaly/detection", response_model=dict)
@@ -1431,7 +1484,7 @@ async def get_available_algorithms():
 
 # 路段分析相关API接口
 
-@router.post("/api/road/analysis", response_model=RoadAnalysisResponse)
+@router.post("/road/analysis", response_model=RoadAnalysisResponse)
 async def analyze_road_segments(request: RoadAnalysisRequest):
     """
     路段分析API
@@ -1555,7 +1608,7 @@ async def analyze_road_segments(request: RoadAnalysisRequest):
             flow_patterns=[]
         )
 
-@router.get("/api/road/segments", response_model=RoadSegmentResponse)
+@router.get("/road/segments", response_model=RoadSegmentResponse)
 async def get_road_segments():
     """
     获取路段信息API
@@ -1616,7 +1669,7 @@ async def get_road_segments():
             total_segments=0
         )
 
-@router.post("/api/road/traffic", response_model=RoadTrafficResponse)
+@router.post("/road/traffic", response_model=RoadTrafficResponse)
 async def get_road_traffic_data(time_range: Dict[str, float]):
     """
     获取路段交通数据API
@@ -1691,7 +1744,7 @@ async def get_road_traffic_data(time_range: Dict[str, float]):
             statistics={}
         )
 
-@router.post("/api/road/visualization", response_model=RoadVisualizationResponse)
+@router.post("/road/visualization", response_model=RoadVisualizationResponse)
 async def get_road_visualization_data(request: Dict[str, Any]):
     """
     获取路段可视化数据API
@@ -1769,7 +1822,7 @@ async def get_road_visualization_data(request: Dict[str, Any]):
             legend_info={}
         )
 
-@router.get("/api/road/metrics", response_model=Dict[str, Any])
+@router.get("/road/metrics", response_model=Dict[str, Any])
 async def get_road_network_metrics():
     """
     获取路网整体指标API
@@ -1903,6 +1956,830 @@ async def get_weekly_passenger_flow_analysis(
             "message": f"分析失败: {str(e)}",
             "data": {}
         }
+
+
+# 智能客运监控相关API接口
+
+@router.post("/smart-passenger/analysis", response_model=SmartPassengerResponse)
+async def analyze_smart_passenger(request: SmartPassengerRequest):
+    """
+    智能客运监控分析API
+    分析天气对客流的影响，载客出租车需求等
+    """
+    try:
+        start_time = time.time()
+        
+        # 获取当前时间作为时间范围（演示用）
+        current_time = time.time()
+        start_timestamp = current_time - 24 * 3600  # 24小时前
+        end_timestamp = current_time
+        
+        # 加载数据
+        data_processor = TrafficDataProcessor()
+        df = data_processor.load_data(start_timestamp, end_timestamp)
+        
+        if df.empty:
+            return SmartPassengerResponse(
+                success=False,
+                message="没有可用的交通数据",
+                analysis_type=request.analysis_type,
+                statistics=None,
+                processing_time=time.time() - start_time
+            )
+        
+        # 初始化智能客运分析引擎
+        from .smart_passenger_engine import SmartPassengerEngine
+        smart_engine = SmartPassengerEngine()
+        
+        # 获取天气数据
+        weather_data = []
+        if request.include_weather:
+            weather_data = smart_engine.get_weather_data(start_timestamp, end_timestamp)
+        
+        # 识别载客车辆和客流数据
+        passenger_flows = smart_engine.identify_passenger_vehicles(df)
+        
+        # 分析出租车需求
+        taxi_demand_data = []
+        if request.include_taxi_analysis:
+            taxi_demand_data = smart_engine.analyze_taxi_demand(df, request.time_resolution)
+        
+        # 分析天气影响
+        weather_impact = []
+        if request.weather_correlation and weather_data:
+            weather_impact = smart_engine.analyze_weather_impact(passenger_flows, weather_data)
+        
+        # 计算出租车供需
+        taxi_supply_demand = []
+        if taxi_demand_data:
+            taxi_supply_demand = smart_engine.calculate_taxi_supply_demand(taxi_demand_data)
+        
+        # 生成统计数据
+        statistics = smart_engine.generate_smart_passenger_statistics(
+            passenger_flows, weather_data, taxi_demand_data, weather_impact,
+            (start_timestamp, end_timestamp)
+        )
+        
+        return SmartPassengerResponse(
+            success=True,
+            message=f"智能客运监控分析完成，分析了 {len(passenger_flows)} 条客流数据",
+            analysis_type=request.analysis_type,
+            statistics=statistics,
+            weather_impact=weather_impact if weather_impact else None,
+            taxi_demand=taxi_supply_demand if taxi_supply_demand else None,
+            processing_time=time.time() - start_time
+        )
+        
+    except Exception as e:
+        logger.error(f"智能客运监控分析失败: {str(e)}")
+        return SmartPassengerResponse(
+            success=False,
+            message=f"分析失败: {str(e)}",
+            analysis_type=request.analysis_type,
+            statistics=None,
+            processing_time=time.time() - start_time if 'start_time' in locals() else 0
+        )
+
+@router.post("/smart-passenger/weather-impact", response_model=WeatherImpactResponse)
+async def analyze_weather_impact(request: WeatherImpactRequest):
+    """
+    天气影响分析API
+    专门分析天气变化对客流量的影响
+    """
+    try:
+        # 获取时间范围
+        current_time = time.time()
+        start_timestamp = current_time - 7 * 24 * 3600  # 7天前，获取更多天气样本
+        end_timestamp = current_time
+        
+        # 加载数据
+        data_processor = TrafficDataProcessor()
+        df = data_processor.load_data(start_timestamp, end_timestamp)
+        
+        if df.empty:
+            return WeatherImpactResponse(
+                success=False,
+                message="没有可用的交通数据",
+                weather_impact_analysis=[],
+                correlation_matrix={},
+                weather_stats={}
+            )
+        
+        # 初始化智能客运分析引擎
+        from .smart_passenger_engine import SmartPassengerEngine
+        smart_engine = SmartPassengerEngine()
+        
+        # 获取天气数据
+        weather_data = smart_engine.get_weather_data(start_timestamp, end_timestamp)
+        
+        # 识别客流数据
+        passenger_flows = smart_engine.identify_passenger_vehicles(df)
+        
+        # 分析天气影响
+        weather_impact_analysis = smart_engine.analyze_weather_impact(passenger_flows, weather_data)
+        
+        # 计算相关性矩阵
+        correlation_matrix = {}
+        for impact in weather_impact_analysis:
+            correlation_matrix[impact.weather_condition] = impact.correlation_coefficient
+        
+        # 生成天气统计
+        weather_stats = {
+            "total_weather_records": len(weather_data),
+            "weather_type_distribution": {},
+            "avg_temperature": np.mean([w.temperature for w in weather_data]) if weather_data else 0,
+            "avg_precipitation": np.mean([w.precipitation for w in weather_data]) if weather_data else 0
+        }
+        
+        # 统计天气类型分布
+        for weather in weather_data:
+            weather_type = weather.weather_type
+            weather_stats["weather_type_distribution"][weather_type] = \
+                weather_stats["weather_type_distribution"].get(weather_type, 0) + 1
+        
+        return WeatherImpactResponse(
+            success=True,
+            message=f"天气影响分析完成，分析了 {len(weather_data)} 条天气数据",
+            weather_impact_analysis=weather_impact_analysis,
+            correlation_matrix=correlation_matrix,
+            weather_stats=weather_stats,
+            prediction_data=None  # 暂不实现预测功能
+        )
+        
+    except Exception as e:
+        logger.error(f"天气影响分析失败: {str(e)}")
+        return WeatherImpactResponse(
+            success=False,
+            message=f"分析失败: {str(e)}",
+            weather_impact_analysis=[],
+            correlation_matrix={},
+            weather_stats={}
+        )
+
+@router.post("/smart-passenger/taxi-demand", response_model=TaxiDemandResponse)
+async def analyze_taxi_demand(request: TaxiDemandRequest):
+    """
+    出租车需求分析API
+    动态监控载客出租车数量和需求情况
+    """
+    try:
+        # 获取时间范围（实时监控使用较短时间范围）
+        current_time = time.time()
+        if request.real_time_monitoring:
+            start_timestamp = current_time - 3600  # 1小时前
+        else:
+            start_timestamp = current_time - 24 * 3600  # 24小时前
+        end_timestamp = current_time
+        
+        # 加载数据
+        data_processor = TrafficDataProcessor()
+        df = data_processor.load_data(start_timestamp, end_timestamp)
+        
+        if df.empty:
+            return TaxiDemandResponse(
+                success=False,
+                message="没有可用的交通数据",
+                supply_demand_analysis=[],
+                real_time_status={},
+                hotspot_visualization={}
+            )
+        
+        # 初始化智能客运分析引擎
+        from .smart_passenger_engine import SmartPassengerEngine
+        smart_engine = SmartPassengerEngine()
+        
+        # 分析出租车需求
+        taxi_demand_data = smart_engine.analyze_taxi_demand(df)
+        
+        # 计算供需分析
+        supply_demand_analysis = smart_engine.calculate_taxi_supply_demand(taxi_demand_data)
+        
+        # 生成实时状态
+        current_data = [td for td in taxi_demand_data 
+                       if abs(td.timestamp - current_time) < 900]  # 15分钟内
+        
+        real_time_status = {
+            "current_time": current_time,
+            "active_loaded_taxis": sum(td.loaded_taxis for td in current_data),
+            "active_empty_taxis": sum(td.empty_taxis for td in current_data),
+            "current_demand": sum(td.total_orders for td in current_data),
+            "overall_supply_ratio": 0,
+            "demand_level": "normal"
+        }
+        
+        if real_time_status["current_demand"] > 0:
+            real_time_status["overall_supply_ratio"] = \
+                real_time_status["active_loaded_taxis"] / real_time_status["current_demand"]
+        
+        # 判断需求等级
+        if real_time_status["overall_supply_ratio"] < 0.5:
+            real_time_status["demand_level"] = "high"
+        elif real_time_status["overall_supply_ratio"] > 1.5:
+            real_time_status["demand_level"] = "low"
+        
+        # 生成热点可视化数据
+        hotspot_visualization = {
+            "high_demand_zones": [],
+            "low_supply_zones": [],
+            "heatmap_data": []
+        }
+        
+        for td in current_data:
+            if td.demand_index > 0.7:
+                hotspot_visualization["high_demand_zones"].append({
+                    "location": td.location,
+                    "demand_index": td.demand_index,
+                    "orders": td.total_orders
+                })
+            
+            if td.supply_ratio < 0.5:
+                hotspot_visualization["low_supply_zones"].append({
+                    "location": td.location,
+                    "supply_ratio": td.supply_ratio,
+                    "waiting_orders": td.waiting_orders
+                })
+            
+            hotspot_visualization["heatmap_data"].append({
+                "lat": td.location["lat"],
+                "lng": td.location["lng"],
+                "intensity": td.demand_index
+            })
+        
+        return TaxiDemandResponse(
+            success=True,
+            message=f"出租车需求分析完成，分析了 {len(taxi_demand_data)} 个区域",
+            supply_demand_analysis=supply_demand_analysis,
+            real_time_status=real_time_status,
+            demand_forecasting=None,  # 暂不实现预测功能
+            hotspot_visualization=hotspot_visualization
+        )
+        
+    except Exception as e:
+        logger.error(f"出租车需求分析失败: {str(e)}")
+        return TaxiDemandResponse(
+            success=False,
+            message=f"分析失败: {str(e)}",
+            supply_demand_analysis=[],
+            real_time_status={},
+            hotspot_visualization={}
+        )
+
+@router.post("/smart-passenger/visualization", response_model=PassengerVisualizationResponse)
+async def get_passenger_visualization_data(request: Dict[str, Any]):
+    """
+    客运可视化数据API
+    生成客流热力图、天气关联图表、出租车需求地图等可视化数据
+    """
+    try:
+        visualization_type = request.get("visualization_type", "comprehensive")
+        time_range = request.get("time_range", {})
+        
+        start_timestamp = time_range.get("start", time.time() - 3600)
+        end_timestamp = time_range.get("end", time.time())
+        
+        # 加载数据
+        data_processor = TrafficDataProcessor()
+        df = data_processor.load_data(start_timestamp, end_timestamp)
+        
+        if df.empty:
+            return PassengerVisualizationResponse(
+                success=False,
+                message="没有可用的数据进行可视化",
+                passenger_heatmap={},
+                weather_correlation_chart={},
+                taxi_demand_map={},
+                time_series_data={}
+            )
+        
+        # 初始化智能客运分析引擎
+        from .smart_passenger_engine import SmartPassengerEngine
+        smart_engine = SmartPassengerEngine()
+        
+        # 获取基础数据
+        weather_data = smart_engine.get_weather_data(start_timestamp, end_timestamp)
+        passenger_flows = smart_engine.identify_passenger_vehicles(df)
+        taxi_demand_data = smart_engine.analyze_taxi_demand(df)
+        
+        # 生成客流热力图数据
+        passenger_heatmap = {
+            "heatmap_points": [
+                {
+                    "lat": pf.location["lat"],
+                    "lng": pf.location["lng"],
+                    "intensity": pf.passenger_count,
+                    "type": "pickup" if pf.is_pickup else "dropoff"
+                }
+                for pf in passenger_flows
+            ],
+            "legend": {
+                "pickup": "上客点",
+                "dropoff": "下客点"
+            }
+        }
+        
+        # 生成天气关联图表数据
+        weather_correlation_chart = {
+            "weather_passenger_correlation": [],
+            "time_series": []
+        }
+        
+        if weather_data and passenger_flows:
+            weather_impact = smart_engine.analyze_weather_impact(passenger_flows, weather_data)
+            for impact in weather_impact:
+                weather_correlation_chart["weather_passenger_correlation"].append({
+                    "weather_type": impact.weather_condition,
+                    "impact_percentage": impact.impact_percentage,
+                    "correlation": impact.correlation_coefficient
+                })
+        
+        # 生成出租车需求地图数据
+        taxi_demand_map = {
+            "demand_zones": [
+                {
+                    "lat": td.location["lat"],
+                    "lng": td.location["lng"],
+                    "loaded_taxis": td.loaded_taxis,
+                    "demand_index": td.demand_index,
+                    "supply_ratio": td.supply_ratio
+                }
+                for td in taxi_demand_data
+            ],
+            "supply_demand_legend": {
+                "high_demand": {"color": "#ff4444", "threshold": 0.7},
+                "medium_demand": {"color": "#ffaa44", "threshold": 0.4},
+                "low_demand": {"color": "#44ff44", "threshold": 0.0}
+            }
+        }
+        
+        # 生成时间序列数据
+        time_series_data = {
+            "passenger_flow_trend": [],
+            "weather_trend": [],
+            "taxi_demand_trend": []
+        }
+        
+        # 按小时聚合时间序列
+        hourly_passenger = defaultdict(int)
+        hourly_weather = defaultdict(list)
+        hourly_taxi = defaultdict(list)
+        
+        for pf in passenger_flows:
+            hour = datetime.fromtimestamp(pf.timestamp).strftime("%Y-%m-%d %H:00")
+            hourly_passenger[hour] += pf.passenger_count
+        
+        for w in weather_data:
+            hour = datetime.fromtimestamp(w.timestamp).strftime("%Y-%m-%d %H:00")
+            hourly_weather[hour].append(w)
+        
+        for td in taxi_demand_data:
+            hour = datetime.fromtimestamp(td.timestamp).strftime("%Y-%m-%d %H:00")
+            hourly_taxi[hour].append(td)
+        
+        for hour in sorted(set(list(hourly_passenger.keys()) + list(hourly_weather.keys()))):
+            time_series_data["passenger_flow_trend"].append({
+                "time": hour,
+                "passenger_count": hourly_passenger.get(hour, 0)
+            })
+            
+            if hour in hourly_weather:
+                avg_temp = np.mean([w.temperature for w in hourly_weather[hour]])
+                avg_precip = np.mean([w.precipitation for w in hourly_weather[hour]])
+                time_series_data["weather_trend"].append({
+                    "time": hour,
+                    "temperature": avg_temp,
+                    "precipitation": avg_precip
+                })
+            
+            if hour in hourly_taxi:
+                avg_demand = np.mean([td.demand_index for td in hourly_taxi[hour]])
+                total_loaded = sum(td.loaded_taxis for td in hourly_taxi[hour])
+                time_series_data["taxi_demand_trend"].append({
+                    "time": hour,
+                    "demand_index": avg_demand,
+                    "loaded_taxis": total_loaded
+                })
+        
+        return PassengerVisualizationResponse(
+            success=True,
+            message=f"成功生成可视化数据，包含 {len(passenger_flows)} 个客流点",
+            passenger_heatmap=passenger_heatmap,
+            weather_correlation_chart=weather_correlation_chart,
+            taxi_demand_map=taxi_demand_map,
+            time_series_data=time_series_data
+        )
+        
+    except Exception as e:
+        logger.error(f"客运可视化数据生成失败: {str(e)}")
+        return PassengerVisualizationResponse(
+            success=False,
+            message=f"生成可视化数据失败: {str(e)}",
+            passenger_heatmap={},
+            weather_correlation_chart={},
+            taxi_demand_map={},
+            time_series_data={}
+        )
+
+@router.get("/api/smart-passenger/real-time", response_model=Dict[str, Any])
+async def get_real_time_passenger_monitoring():
+    """
+    实时客运监控API
+    获取当前时段的实时客流和载客车辆状态
+    """
+    try:
+        current_time = time.time()
+        start_timestamp = current_time - 900  # 15分钟前
+        end_timestamp = current_time
+        
+        # 加载实时数据
+        data_processor = TrafficDataProcessor()
+        df = data_processor.load_data(start_timestamp, end_timestamp)
+        
+        if df.empty:
+            return {
+                "success": False,
+                "message": "没有实时数据",
+                "real_time_data": {}
+            }
+        
+        # 初始化智能客运分析引擎
+        from .smart_passenger_engine import SmartPassengerEngine
+        smart_engine = SmartPassengerEngine()
+        
+        # 获取实时数据
+        passenger_flows = smart_engine.identify_passenger_vehicles(df)
+        taxi_demand_data = smart_engine.analyze_taxi_demand(df, 5)  # 5分钟分辨率
+        
+        # 计算实时指标
+        real_time_data = {
+            "current_timestamp": current_time,
+            "time_window": "15min",
+            "passenger_stats": {
+                "active_passengers": sum(pf.passenger_count for pf in passenger_flows),
+                "pickup_points": len([pf for pf in passenger_flows if pf.is_pickup]),
+                "dropoff_points": len([pf for pf in passenger_flows if not pf.is_pickup])
+            },
+            "taxi_stats": {
+                "loaded_taxis": sum(td.loaded_taxis for td in taxi_demand_data),
+                "empty_taxis": sum(td.empty_taxis for td in taxi_demand_data),
+                "total_demand": sum(td.total_orders for td in taxi_demand_data),
+                "avg_demand_index": np.mean([td.demand_index for td in taxi_demand_data]) if taxi_demand_data else 0
+            },
+            "status_indicators": {
+                "demand_level": "normal",
+                "supply_status": "adequate",
+                "traffic_flow": "smooth"
+            }
+        }
+        
+        # 判断状态指标
+        if real_time_data["taxi_stats"]["avg_demand_index"] > 0.7:
+            real_time_data["status_indicators"]["demand_level"] = "high"
+        elif real_time_data["taxi_stats"]["avg_demand_index"] < 0.3:
+            real_time_data["status_indicators"]["demand_level"] = "low"
+        
+        supply_ratio = (real_time_data["taxi_stats"]["loaded_taxis"] / 
+                       max(real_time_data["taxi_stats"]["total_demand"], 1))
+        if supply_ratio < 0.5:
+            real_time_data["status_indicators"]["supply_status"] = "shortage"
+        elif supply_ratio > 1.5:
+            real_time_data["status_indicators"]["supply_status"] = "surplus"
+        
+        return {
+            "success": True,
+            "message": "实时监控数据获取成功",
+            "real_time_data": real_time_data
+        }
+        
+    except Exception as e:
+        logger.error(f"实时客运监控失败: {str(e)}")
+        return {
+            "success": False,
+            "message": f"实时监控失败: {str(e)}",
+            "real_time_data": {}
+        }
+
+# ===== 路程分析和订单速度分析API接口 =====
+
+@router.post("/road/trip-analysis", response_model=TripAnalysisResponse)
+async def analyze_trip_distance_classification(
+    start_time: float = Query(..., description="开始时间戳（UTC）"),
+    end_time: float = Query(..., description="结束时间戳（UTC）"),
+    request: TripAnalysisRequest = None
+):
+    """
+    路程分析功能
+    规定以小于4千米为短途，4千米至8千米为中途，大于8千米为长途
+    查看每天三种距离运输的占比，完成路程分析的可视化展示
+    """
+    try:
+        start_processing = time.time()
+        
+        # 默认请求参数
+        if request is None:
+            request = TripAnalysisRequest()
+        
+        # 根据选择的日期调整时间范围
+        if request.selected_date and request.selected_date != 'all':
+            # 将日期字符串转换为时间戳
+            from datetime import datetime
+            date_obj = datetime.strptime(request.selected_date, '%Y-%m-%d')
+            # 设置为该日期的开始和结束时间（UTC）
+            day_start = int(date_obj.timestamp())
+            day_end = day_start + 86400 - 1  # 86400秒 = 24小时
+            
+            logger.info(f"选择特定日期 {request.selected_date}: {day_start} - {day_end}")
+            actual_start_time = day_start
+            actual_end_time = day_end
+        else:
+            logger.info(f"选择全部日期: {start_time} - {end_time}")
+            actual_start_time = start_time
+            actual_end_time = end_time
+        
+        # 加载数据
+        df = data_processor.load_data(actual_start_time, actual_end_time)
+        
+        if df.empty:
+            return TripAnalysisResponse(
+                success=False,
+                message="未找到符合条件的数据",
+                analysis_result=TripAnalysisStatistics(
+                    time_range={"start": actual_start_time, "end": actual_end_time},
+                    daily_classifications=[],
+                    overall_stats={},
+                    trend_analysis={}
+                ),
+                visualization_data={}
+            )
+        
+        # 创建路段分析引擎
+        from .road_analysis_engine import RoadAnalysisEngine
+        road_engine = RoadAnalysisEngine()
+        
+        # 标准化数据列名并调试
+        logger.info(f"原始数据列名: {list(df.columns)}")
+        logger.info(f"数据形状: {df.shape}")
+        logger.info(f"前几行数据: {df.head(2).to_dict()}")
+        
+        if 'COMMADDR' in df.columns:
+            df['vehicle_id'] = df['COMMADDR']
+        if 'UTC' in df.columns:
+            df['timestamp'] = df['UTC']
+        if 'LAT' in df.columns and 'LON' in df.columns:
+            df['latitude'] = df['LAT'] / 1e5
+            df['longitude'] = df['LON'] / 1e5
+        
+        logger.info(f"标准化后数据列名: {list(df.columns)}")
+        logger.info(f"车辆ID样本: {df['vehicle_id'].head(3).tolist() if 'vehicle_id' in df.columns else 'N/A'}")
+        logger.info(f"时间戳样本: {df['timestamp'].head(3).tolist() if 'timestamp' in df.columns else 'N/A'}")
+        logger.info(f"坐标样本: lat={df['latitude'].head(3).tolist() if 'latitude' in df.columns else 'N/A'}, lng={df['longitude'].head(3).tolist() if 'longitude' in df.columns else 'N/A'}")
+        
+        # 进行路程分析
+        analysis_result = road_engine.analyze_trip_distance_classification(df)
+        
+        # 生成可视化数据
+        visualization_data = {
+            "daily_chart": {
+                "type": "stacked_bar",
+                "title": "每日路程分类统计",
+                "data": [
+                    {
+                        "date": daily.date,
+                        "short_trips": daily.short_trips,
+                        "medium_trips": daily.medium_trips,
+                        "long_trips": daily.long_trips,
+                        "short_percentage": daily.short_percentage,
+                        "medium_percentage": daily.medium_percentage,
+                        "long_percentage": daily.long_percentage
+                    }
+                    for daily in analysis_result.daily_classifications
+                ]
+            },
+            "pie_chart": {
+                "type": "pie",
+                "title": "总体路程分类占比",
+                "data": [
+                    {
+                        "name": "短途 (<4km)",
+                        "value": analysis_result.overall_stats.get("overall_short_percentage", 0),
+                        "count": analysis_result.overall_stats.get("short_trips_total", 0)
+                    },
+                    {
+                        "name": "中途 (4-8km)",
+                        "value": analysis_result.overall_stats.get("overall_medium_percentage", 0),
+                        "count": analysis_result.overall_stats.get("medium_trips_total", 0)
+                    },
+                    {
+                        "name": "长途 (>8km)",
+                        "value": analysis_result.overall_stats.get("overall_long_percentage", 0),
+                        "count": analysis_result.overall_stats.get("long_trips_total", 0)
+                    }
+                ]
+            },
+            "trend_chart": {
+                "type": "line",
+                "title": "路程分类趋势分析",
+                "data": {
+                    "short_trip_trend": analysis_result.trend_analysis.get("short_trip_trend", "stable"),
+                    "medium_trip_trend": analysis_result.trend_analysis.get("medium_trip_trend", "stable"),
+                    "long_trip_trend": analysis_result.trend_analysis.get("long_trip_trend", "stable"),
+                    "dominant_category": analysis_result.trend_analysis.get("most_common_distance_category", "unknown")
+                }
+            },
+            "statistics_summary": {
+                "total_trips": analysis_result.overall_stats.get("total_trips", 0),
+                "avg_daily_trips": analysis_result.overall_stats.get("avg_daily_trips", 0),
+                "overall_avg_distance": analysis_result.overall_stats.get("overall_avg_distance", 0),
+                "analysis_days": len(analysis_result.daily_classifications)
+            }
+        }
+        
+        processing_time = time.time() - start_processing
+        
+        logger.info(f"路程分析完成，处理时间: {processing_time:.2f}秒")
+        
+        return TripAnalysisResponse(
+            success=True,
+            message=f"路程分析完成，共分析了 {analysis_result.overall_stats.get('total_trips', 0)} 个订单",
+            analysis_result=analysis_result,
+            visualization_data=visualization_data,
+            processing_time=processing_time
+        )
+        
+    except Exception as e:
+        logger.error(f"路程分析失败: {str(e)}")
+        logger.error(f"错误详情: {traceback.format_exc()}")
+        
+        return TripAnalysisResponse(
+            success=False,
+            message=f"路程分析失败: {str(e)}",
+            analysis_result=TripAnalysisStatistics(
+                time_range={"start": actual_start_time if 'actual_start_time' in locals() else start_time, 
+                           "end": actual_end_time if 'actual_end_time' in locals() else end_time},
+                daily_classifications=[],
+                overall_stats={"error": str(e)},
+                trend_analysis={}
+            ),
+            visualization_data={}
+        )
+
+@router.post("/road/order-speed-analysis", response_model=OrderSpeedAnalysisResponse)
+async def analyze_order_based_road_speed(
+    start_time: float = Query(..., description="开始时间戳（UTC）"),
+    end_time: float = Query(..., description="结束时间戳（UTC）"),
+    request: OrderSpeedAnalysisRequest = None
+):
+    """
+    基于订单的道路速度分析
+    利用中短途订单数据中的预估距离与起止时间，计算订单的平均速度
+    大数据背景下，大量订单的平均速度可以实时反映道路的拥堵状况
+    完成道路速度的可视化展示
+    """
+    try:
+        start_processing = time.time()
+        
+        # 默认请求参数
+        if request is None:
+            request = OrderSpeedAnalysisRequest()
+        
+        # 加载数据
+        df = data_processor.load_data(start_time, end_time)
+        
+        if df.empty:
+            return OrderSpeedAnalysisResponse(
+                success=False,
+                message="未找到符合条件的数据",
+                speed_analysis=RoadSpeedAnalysisResult(
+                    time_range={"start": start_time, "end": end_time},
+                    speed_data=[],
+                    heatmap_data=[],
+                    congestion_summary={},
+                    road_speed_trends=[]
+                ),
+                visualization_data={}
+            )
+        
+        # 创建路段分析引擎
+        from .road_analysis_engine import RoadAnalysisEngine
+        road_engine = RoadAnalysisEngine()
+        
+        # 标准化数据列名
+        if 'COMMADDR' in df.columns:
+            df['vehicle_id'] = df['COMMADDR']
+        if 'UTC' in df.columns:
+            df['timestamp'] = df['UTC']
+        if 'LAT' in df.columns and 'LON' in df.columns:
+            df['latitude'] = df['LAT'] / 1e5
+            df['longitude'] = df['LON'] / 1e5
+        
+        # 进行订单速度分析
+        speed_analysis = road_engine.analyze_order_based_road_speed(
+            df,
+            include_short_medium_only=request.include_short_medium_only,
+            spatial_resolution=request.spatial_resolution,
+            min_orders_per_location=request.min_orders_per_location,
+            congestion_threshold=request.congestion_threshold
+        )
+        
+        # 生成可视化数据
+        visualization_data = {
+            "speed_heatmap": {
+                "type": "heatmap",
+                "title": "道路速度热力图",
+                "data": [
+                    {
+                        "lat": heatmap.lat,
+                        "lng": heatmap.lng,
+                        "speed": heatmap.speed,
+                        "intensity": heatmap.intensity,
+                        "order_count": heatmap.order_count,
+                        "congestion_level": heatmap.congestion_level
+                    }
+                    for heatmap in speed_analysis.heatmap_data
+                ]
+            },
+            "congestion_distribution": {
+                "type": "pie",
+                "title": "拥堵等级分布",
+                "data": [
+                    {
+                        "name": f"{level} (拥堵等级)",
+                        "value": info["percentage"],
+                        "count": info["count"]
+                    }
+                    for level, info in speed_analysis.congestion_summary.get("congestion_distribution", {}).items()
+                ]
+            },
+            "speed_trends": {
+                "type": "line",
+                "title": "24小时道路速度趋势",
+                "data": [
+                    {
+                        "hour": trend["hour"],
+                        "avg_speed": trend["avg_speed"],
+                        "order_count": trend["order_count"],
+                        "is_peak_hour": trend["is_peak_hour"],
+                        "speed_category": trend["speed_category"]
+                    }
+                    for trend in speed_analysis.road_speed_trends
+                ]
+            },
+            "speed_statistics": {
+                "overall_avg_speed": speed_analysis.congestion_summary.get("overall_avg_speed", 0),
+                "total_analysis_locations": speed_analysis.congestion_summary.get("total_analysis_locations", 0),
+                "high_confidence_locations": speed_analysis.congestion_summary.get("high_confidence_locations", 0),
+                "total_orders_analyzed": speed_analysis.congestion_summary.get("total_orders_analyzed", 0),
+                "speed_range": {
+                    "min": speed_analysis.congestion_summary.get("speed_statistics", {}).get("min_speed", 0),
+                    "max": speed_analysis.congestion_summary.get("speed_statistics", {}).get("max_speed", 0),
+                    "median": speed_analysis.congestion_summary.get("speed_statistics", {}).get("median_speed", 0)
+                }
+            },
+            "congestion_zones": {
+                "type": "scatter",
+                "title": "拥堵区域分布",
+                "data": [
+                    {
+                        "lat": data.location["lat"],
+                        "lng": data.location["lng"],
+                        "speed": data.avg_speed,
+                        "congestion_level": data.congestion_level,
+                        "order_count": data.order_count,
+                        "confidence": data.confidence_score
+                    }
+                    for data in speed_analysis.speed_data
+                    if data.congestion_level in ["heavy", "jam"]  # 只显示拥堵区域
+                ]
+            }
+        }
+        
+        processing_time = time.time() - start_processing
+        
+        logger.info(f"订单速度分析完成，处理时间: {processing_time:.2f}秒")
+        
+        return OrderSpeedAnalysisResponse(
+            success=True,
+            message=f"订单速度分析完成，分析了 {len(speed_analysis.speed_data)} 个位置的速度数据",
+            speed_analysis=speed_analysis,
+            visualization_data=visualization_data,
+            processing_time=processing_time
+        )
+        
+    except Exception as e:
+        logger.error(f"订单速度分析失败: {str(e)}")
+        logger.error(f"错误详情: {traceback.format_exc()}")
+        
+        return OrderSpeedAnalysisResponse(
+            success=False,
+            message=f"订单速度分析失败: {str(e)}",
+            speed_analysis=RoadSpeedAnalysisResult(
+                time_range={"start": start_time, "end": end_time},
+                speed_data=[],
+                heatmap_data=[],
+                congestion_summary={"error": str(e)},
+                road_speed_trends=[]
+            ),
+            visualization_data={}
+        )
 
 
 

@@ -14,6 +14,7 @@ import TrafficAnomaly from "../modules/trafficVisualization/TrafficAnomaly.vue"
 import SpatioTemporalAnalysis from "../modules/trafficVisualization/SpatioTemporalAnalysis.vue"
 import TrafficStatistics from "../modules/trafficVisualization/TrafficStatistics.vue"
 import TrafficRoadSimple from "../modules/trafficVisualization/TrafficRoadSimple.vue"
+import TrafficRoadAdvanced from "../modules/trafficVisualization/TrafficRoadAdvanced.vue"
 import TrafficPattern from "../modules/trafficVisualization/TrafficPattern.vue"
 
 const routes = [
@@ -36,6 +37,7 @@ const routes = [
       { path: "spatiotemporal", component: SpatioTemporalAnalysis },
       { path: "statistics", component: TrafficStatistics },
       { path: "road", component: TrafficRoadSimple },
+      { path: "road-advanced", component: TrafficRoadAdvanced },
       { path: "pattern", component: TrafficPattern }
     ]
   }

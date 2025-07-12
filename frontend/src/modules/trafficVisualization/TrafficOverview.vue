@@ -135,6 +135,35 @@
           </div>
         </div>
         
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <!-- 显示点数量限制 -->
+          <div>
+            <label class="block text-gray-300 text-sm mb-2">地图显示点数量</label>
+            <select 
+              v-model="queryParams.maxPoints"
+              class="w-full px-3 py-2 bg-gray-800/50 border border-gray-600 rounded-lg text-white focus:border-blue-400 focus:outline-none"
+            >
+              <option value="500">500个点 (快速)</option>
+              <option value="1000">1000个点 (推荐)</option>
+              <option value="2000">2000个点 (详细)</option>
+              <option value="5000">5000个点 (完整)</option>
+            </select>
+          </div>
+          
+          <!-- 性能模式 -->
+          <div>
+            <label class="block text-gray-300 text-sm mb-2">性能模式</label>
+            <select 
+              v-model="queryParams.performanceMode"
+              class="w-full px-3 py-2 bg-gray-800/50 border border-gray-600 rounded-lg text-white focus:border-blue-400 focus:outline-none"
+            >
+              <option value="balanced">平衡模式</option>
+              <option value="performance">性能优先</option>
+              <option value="quality">质量优先</option>
+            </select>
+          </div>
+        </div>
+        
         <div class="flex items-center justify-between">
           <div class="flex space-x-2">
             <button 
@@ -156,7 +185,14 @@
           </div>
           
           <div class="text-sm text-gray-400">
-            数据范围：2013年9月12日 - 2013年9月18日
+            数据范围：2013年9月11日 - 2013年9月18日
+            <span v-if="dataSummary.total_records" class="ml-2">
+              ({{ Math.round(dataSummary.total_records / 10000) }}万条记录)
+            </span>
+            <br>
+            <span class="text-xs">
+              显示模式：最多{{ queryParams.maxPoints }}个点 | {{ queryParams.performanceMode === 'performance' ? '性能优先' : queryParams.performanceMode === 'quality' ? '质量优先' : '平衡模式' }}
+            </span>
           </div>
         </div>
       </div>
@@ -416,21 +452,25 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { getTrafficVisualization } from '@/api/traffic'
+import { getTrafficVisualization, getTrafficSummary, getDataFilesInfo } from '@/api/traffic'
 
 const router = useRouter()
 
 // 响应式数据
 const loading = ref(false)
 const trafficData = ref([])
+const dataSummary = ref({})
+const filesInfo = ref([])
 const queryParams = ref({
-  startTime: "2013-09-13T08:00",
-  endTime: "2013-09-13T12:00",
+  startTime: "2013-09-11T16:00",  // 根据真实数据调整
+  endTime: "2013-09-11T20:00",   // 根据真实数据调整
   vehicleId: '',
   viewType: 'distribution',
-  mapStyle: 'normal'
+  mapStyle: 'normal',
+  maxPoints: 1000,  // 默认显示1000个点
+  performanceMode: 'balanced'  // 默认平衡模式
 })
 
 // 错误处理
@@ -439,7 +479,7 @@ const showError = ref(false)
 
 // 地图相关
 let map = null
-let markers = []
+const markers = ref([])
 
 // 地图风格配置
 const mapStyleOptions = {
@@ -468,18 +508,47 @@ const coverageArea = computed(() => {
 })
 
 const activeVehicles = computed(() => {
-  const uniqueVehicles = new Set(trafficData.value.map(item => item.vehicleId || item.vehicle_id))
-  return uniqueVehicles.size
+  if (trafficData.value.length > 0) {
+    const uniqueVehicles = new Set(trafficData.value.map(item => item.vehicleId || item.vehicle_id))
+    return uniqueVehicles.size
+  }
+  return dataSummary.value.unique_vehicles || 0
 })
 
 const averageSpeed = computed(() => {
-  if (trafficData.value.length === 0) return 0
-  const totalSpeed = trafficData.value.reduce((sum, item) => sum + (item.speed || 0), 0)
-  return Math.round(totalSpeed / trafficData.value.length)
+  if (trafficData.value.length > 0) {
+    // 调试：查看前几个数据点的速度信息
+    console.log('🚗 计算平均速度，前3个数据点:', trafficData.value.slice(0, 3).map(item => ({
+      speed: item.speed,
+      vehicle_id: item.vehicle_id,
+      keys: Object.keys(item)
+    })))
+    
+    const validSpeeds = trafficData.value
+      .map(item => item.speed)
+      .filter(speed => speed !== null && speed !== undefined && !isNaN(speed))
+    
+    console.log('🚗 有效速度数据:', {
+      total: trafficData.value.length,
+      validSpeeds: validSpeeds.length,
+      sampleSpeeds: validSpeeds.slice(0, 10)
+    })
+    
+    if (validSpeeds.length > 0) {
+      const totalSpeed = validSpeeds.reduce((sum, speed) => sum + speed, 0)
+      const avgSpeed = Math.round(totalSpeed / validSpeeds.length)
+      console.log('🚗 平均速度计算结果:', avgSpeed)
+      return avgSpeed
+    }
+  }
+  return dataSummary.value.avg_speed_kmh || 0
 })
 
 const totalDistance = computed(() => {
-  return Math.round(trafficData.value.length * 0.1) // 模拟计算，每条记录约0.1km
+  if (trafficData.value.length > 0) {
+    return Math.round(trafficData.value.length * 0.1) // 模拟计算，每条记录约0.1km
+  }
+  return Math.round((dataSummary.value.total_records || 0) * 0.05) // 根据总记录数估算
 })
 
 const lastUpdate = computed(() => {
@@ -495,8 +564,8 @@ const dataQualityScore = computed(() => {
   return Math.round((validRecords / trafficData.value.length) * 100)
 })
 
-// 设置日期选择器的最小和最大值
-const minDate = "2013-09-12T00:00"
+// 设置日期选择器的最小和最大值 - 根据真实数据调整
+const minDate = "2013-09-11T00:00"  // 真实数据从9月11日开始
 const maxDate = "2013-09-18T23:59"
 
 // 查询相关函数
@@ -516,14 +585,14 @@ const submitQuery = async () => {
   const startTimeUTC = convertToUTC(queryParams.value.startTime)
   const endTimeUTC = convertToUTC(queryParams.value.endTime)
   
-  // 定义数据集的有效时间范围
-  const minValidTime = 1378944000  // 2013-09-12 00:00:00 UTC
+  // 定义数据集的有效时间范围 - 根据真实数据调整
+  const minValidTime = 1378857600  // 2013-09-11 00:00:00 UTC
   const maxValidTime = 1379548799  // 2013-09-18 23:59:59 UTC
   
   // 验证时间范围
   if (startTimeUTC < minValidTime || startTimeUTC > maxValidTime || 
       endTimeUTC < minValidTime || endTimeUTC > maxValidTime) {
-    errorMessage.value = '查询时间超出数据集范围（2013年9月12日至9月18日）'
+    errorMessage.value = '查询时间超出数据集范围（2013年9月11日至9月18日）'
     showError.value = true
     return
   }
@@ -541,10 +610,12 @@ const submitQuery = async () => {
     
     if (response.data.success) {
       trafficData.value = response.data.data
-      // 更新地图显示
-      setTimeout(() => {
-        updateMap()
-      }, 100)
+      // 更新地图显示 - 使用nextTick确保DOM更新完成
+      nextTick(() => {
+        setTimeout(() => {
+          updateMap()
+        }, 200)
+      })
     } else {
       errorMessage.value = response.data.message || '查询失败'
       showError.value = true
@@ -559,11 +630,13 @@ const submitQuery = async () => {
 }
 
 const resetQuery = () => {
-  queryParams.value.startTime = "2013-09-13T08:00"
-  queryParams.value.endTime = "2013-09-13T12:00"
+  queryParams.value.startTime = "2013-09-11T16:00"  // 根据真实数据调整
+  queryParams.value.endTime = "2013-09-11T20:00"    // 根据真实数据调整
   queryParams.value.vehicleId = ""
   queryParams.value.viewType = 'distribution'
   queryParams.value.mapStyle = 'normal'
+  queryParams.value.maxPoints = 1000
+  queryParams.value.performanceMode = 'balanced'
   
   errorMessage.value = ''
   showError.value = false
@@ -571,8 +644,15 @@ const resetQuery = () => {
   
   // 清除地图并重置风格
   if (map) {
-    map.clearMap()
-    changeMapStyle()
+    try {
+      if (markers.value.length > 0) {
+        map.remove(markers.value)
+        markers.value = []
+      }
+      changeMapStyle()
+    } catch (error) {
+      console.error('❌ 重置地图失败:', error)
+    }
   }
 }
 
@@ -603,29 +683,69 @@ const showAllModules = () => {
 
 // 地图相关功能
 const initMap = () => {
-  console.log('初始化地图...')
+  console.log('🗺️ 开始初始化地图...')
+  console.log('🌍 AMap 可用性:', !!window.AMap)
+  
+  const mapContainer = document.getElementById('traffic-map')
+  if (!mapContainer) {
+    console.error('❌ 地图容器未找到')
+    return
+  }
+  console.log('📦 地图容器找到:', mapContainer)
+  
   if (window.AMap) {
-    map = new window.AMap.Map('traffic-map', {
-      zoom: 13,
-      center: [117.000923, 36.675807], // 济南市中心坐标
-      mapStyle: getMapStyleUrl()
-    })
+    try {
+      map = new window.AMap.Map('traffic-map', {
+        zoom: 13,
+        center: [117.000923, 36.675807], // 济南市中心坐标
+        mapStyle: getMapStyleUrl()
+      })
+      
+      map.on('complete', () => {
+        console.log('✅ 地图初始化完成')
+        console.log('🗺️ 地图实例信息:', {
+          center: map.getCenter(),
+          zoom: map.getZoom(),
+          size: map.getSize()
+        })
+        
+        // 暂时禁用测试标记以避免冲突
+        console.log('🧪 跳过测试标记添加')
+      })
+      
+      map.on('click', (e) => {
+        console.log('🖱️ 地图点击事件:', e.lnglat)
+      })
+      
+      console.log('🗺️ 地图实例已创建:', map)
+    } catch (error) {
+      console.error('❌ 地图初始化失败:', error)
+    }
   } else {
-    console.error('AMap is not loaded')
+    console.error('❌ AMap 库未加载')
   }
 }
 
 // 更新地图显示
 const updateMap = () => {
-  if (!map || !trafficData.value.length) return
+  if (!map || !trafficData.value?.length) {
+    console.log('⚠️ 跳过地图更新:', { hasMap: !!map, dataLength: trafficData.value?.length || 0 })
+    return
+  }
   
-  // 清除之前的标记
-  map.clearMap()
-  markers = []
-  
-  // 根据视图类型更新地图
-  if (queryParams.value.viewType === 'distribution') {
-    renderDistributionView()
+  try {
+    // 清除之前的标记
+    if (markers.value.length > 0) {
+      map.remove(markers.value)
+    }
+    markers.value = []
+    
+    // 根据视图类型更新地图
+    if (queryParams.value.viewType === 'distribution') {
+      renderDistributionView()
+    }
+  } catch (error) {
+    console.error('❌ 更新地图失败:', error)
   }
 }
 
@@ -635,21 +755,156 @@ const getMapStyleUrl = () => {
 }
 
 const renderDistributionView = () => {
-  if (!map || !trafficData.value) return
+  console.log('🗺️ renderDistributionView 开始执行')
   
-  trafficData.value.forEach(point => {
-    const marker = new window.AMap.Marker({
-      position: [point.lng, point.lat],
-      title: `车辆ID: ${point.vehicle_id}`
-    })
-    markers.push(marker)
-  })
+  if (!map) {
+    console.warn('❌ 地图实例不存在')
+    return
+  }
   
-  map.add(markers)
+  if (!trafficData.value || trafficData.value.length === 0) {
+    console.warn('❌ 没有数据:', trafficData.value?.length || 0)
+    return
+  }
   
-  // 调整视图以包含所有标记
-  if (markers.length > 0) {
-    map.setFitView(markers)
+  console.log('✅ 开始渲染分布视图，数据点数量:', trafficData.value.length)
+  console.log('📊 前3个数据点示例:', trafficData.value.slice(0, 3))
+  
+  // 使用局部变量避免响应式问题
+  const newMarkers = []
+  let validPoints = 0
+  let invalidPoints = 0
+  
+  // 智能采样：根据用户设置的点数量限制进行采样
+  let dataToProcess = trafficData.value
+  const maxPoints = parseInt(queryParams.value.maxPoints) || 1000
+  
+  if (dataToProcess.length > maxPoints) {
+    console.log(`📊 数据点过多(${dataToProcess.length}个)，采样到${maxPoints}个点`)
+    
+    // 根据性能模式选择采样策略
+    if (queryParams.value.performanceMode === 'performance') {
+      // 性能优先：简单均匀采样
+      const step = Math.floor(dataToProcess.length / maxPoints)
+      dataToProcess = dataToProcess.filter((_, index) => index % step === 0).slice(0, maxPoints)
+    } else if (queryParams.value.performanceMode === 'quality') {
+      // 质量优先：保留高速和异常点
+      const highSpeedPoints = dataToProcess.filter(p => (p.speed || 0) > 50)
+      const normalPoints = dataToProcess.filter(p => (p.speed || 0) <= 50)
+      
+      const highSpeedCount = Math.min(highSpeedPoints.length, Math.floor(maxPoints * 0.3))
+      const normalCount = maxPoints - highSpeedCount
+      
+      const step = Math.floor(normalPoints.length / normalCount)
+      const sampledNormal = normalPoints.filter((_, index) => index % step === 0).slice(0, normalCount)
+      
+      dataToProcess = [...highSpeedPoints.slice(0, highSpeedCount), ...sampledNormal]
+    } else {
+      // 平衡模式：均匀采样
+      const step = Math.floor(dataToProcess.length / maxPoints)
+      dataToProcess = dataToProcess.filter((_, index) => index % step === 0).slice(0, maxPoints)
+    }
+  }
+  
+  console.log(`📍 将处理 ${dataToProcess.length} 个数据点 (${queryParams.value.performanceMode}模式)`)
+  
+  for (let i = 0; i < dataToProcess.length; i++) {
+    const point = dataToProcess[i]
+    const lng = point.lng || point.lon
+    const lat = point.lat
+    const vehicleId = point.vehicle_id || point.vehicleId || 'unknown'
+    const speed = point.speed || 0
+    
+    // 调试前3个点和每100个点
+    if (i < 3 || i % 100 === 0) {
+      console.log(`📍 第${i+1}个点:`, { lng, lat, vehicleId, speed })
+    }
+    
+    if (lng && lat && typeof lng === 'number' && typeof lat === 'number') {
+      // 验证坐标范围（济南市）
+      if (lat >= 36.0 && lat <= 37.0 && lng >= 116.0 && lng <= 118.0) {
+        try {
+          // 根据速度设置不同颜色
+          let color = '#00cfff' // 默认蓝色
+          if (speed > 60) {
+            color = '#ff4444' // 高速红色
+          } else if (speed > 30) {
+            color = '#ffaa00' // 中速橙色
+          } else if (speed > 10) {
+            color = '#00ff00' // 低速绿色
+          } else {
+            color = '#888888' // 静止灰色
+          }
+          
+          const marker = new window.AMap.Marker({
+            position: [lng, lat],
+            title: `车辆: ${vehicleId} 速度: ${speed.toFixed(1)} km/h`,
+            icon: new window.AMap.Icon({
+              size: new window.AMap.Size(12, 12),
+              image: `data:image/svg+xml;base64,${btoa(`
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="6" cy="6" r="5" fill="${color}" stroke="#fff" stroke-width="1"/>
+                  <circle cx="6" cy="6" r="2" fill="#fff"/>
+                </svg>
+              `)}`,
+              imageSize: new window.AMap.Size(12, 12)
+            })
+          })
+          newMarkers.push(marker)
+          validPoints++
+        } catch (error) {
+          console.error('❌ 创建标记失败:', error)
+          invalidPoints++
+        }
+      } else {
+        console.warn('⚠️ 坐标超出范围:', { lng, lat })
+        invalidPoints++
+      }
+    } else {
+      console.warn('⚠️ 无效坐标:', { lng, lat })
+      invalidPoints++
+    }
+  }
+  
+  console.log(`📈 统计: 有效=${validPoints}, 无效=${invalidPoints}`)
+  
+  if (newMarkers.length > 0) {
+    try {
+      console.log('🎯 准备添加标记到地图...')
+      console.log('📌 第一个标记位置:', newMarkers[0].getPosition())
+      
+      map.add(newMarkers)
+      console.log('✅ 标记已添加到地图')
+      
+      // 更新响应式数组
+      markers.value = newMarkers
+      
+      // 调整视图
+      if (newMarkers.length > 1) {
+        map.setFitView(newMarkers)
+        console.log('🔍 地图视图已调整')
+      } else {
+        // 单个标记时手动设置中心
+        const pos = newMarkers[0].getPosition()
+        map.setCenter([pos.lng, pos.lat])
+        console.log('🎯 地图中心已设置到标记位置')
+      }
+      
+      // 检查地图上的覆盖物
+      setTimeout(() => {
+        const overlays = map.getAllOverlays()
+        console.log('🗺️ 地图上的覆盖物数量:', overlays.length)
+        console.log('📍 当前地图中心:', map.getCenter())
+        console.log('🔍 当前地图缩放:', map.getZoom())
+      }, 1000)
+      
+      console.log('✅ 成功渲染', newMarkers.length, '个标记')
+    } catch (error) {
+      console.error('❌ 添加标记失败:', error)
+      console.error('错误详情:', error.stack)
+    }
+  } else {
+    console.warn('⚠️ 没有有效标记')
   }
 }
 
@@ -674,13 +929,31 @@ const renderTrajectoryView = () => {
     const startMarker = new window.AMap.Marker({
       position: path[0],
       title: '起点',
-      icon: 'https://webapi.amap.com/theme/v1.3/markers/n/start.png'
+      icon: new window.AMap.Icon({
+        size: new window.AMap.Size(20, 20),
+        image: `data:image/svg+xml;base64,${btoa(`
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="10" cy="10" r="8" fill="#00ff00" stroke="#fff" stroke-width="2"/>
+            <text x="10" y="14" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">S</text>
+          </svg>
+        `)}`,
+        imageSize: new window.AMap.Size(20, 20)
+      })
     })
     
     const endMarker = new window.AMap.Marker({
       position: path[path.length - 1],
       title: '终点',
-      icon: 'https://webapi.amap.com/theme/v1.3/markers/n/end.png'
+      icon: new window.AMap.Icon({
+        size: new window.AMap.Size(20, 20),
+        image: `data:image/svg+xml;base64,${btoa(`
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="10" cy="10" r="8" fill="#ff4444" stroke="#fff" stroke-width="2"/>
+            <text x="10" y="14" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">E</text>
+          </svg>
+        `)}`,
+        imageSize: new window.AMap.Size(20, 20)
+      })
     })
     
     map.add([startMarker, endMarker])
@@ -737,12 +1010,44 @@ const changeMapStyle = () => {
   }
 }
 
-onMounted(() => {
+// 初始化数据概要信息
+const loadDataSummary = async () => {
+  try {
+    const response = await getTrafficSummary()
+    if (response.data.success) {
+      dataSummary.value = response.data.summary
+      console.log('数据概要加载成功:', dataSummary.value)
+    } else {
+      console.warn('数据概要加载失败:', response.data.message)
+    }
+  } catch (error) {
+    console.error('获取数据概要失败:', error)
+  }
+}
+
+// 加载文件信息
+const loadFilesInfo = async () => {
+  try {
+    const response = await getDataFilesInfo()
+    if (response.data.success) {
+      filesInfo.value = response.data.files
+      console.log('文件信息加载成功:', filesInfo.value)
+    }
+  } catch (error) {
+    console.error('获取文件信息失败:', error)
+  }
+}
+
+onMounted(async () => {
   console.log('📊 交通数据总览页面已加载')
   
-  // 设置默认值为数据集范围内的时间（优化后的4小时范围）
-  queryParams.value.startTime = "2013-09-13T08:00"
-  queryParams.value.endTime = "2013-09-13T12:00"
+  // 加载数据概要信息
+  await loadDataSummary()
+  await loadFilesInfo()
+  
+  // 设置默认值为数据集范围内的时间（根据真实数据调整）
+  queryParams.value.startTime = "2013-09-11T16:00"
+  queryParams.value.endTime = "2013-09-11T20:00"
   
   // 初始化地图
   initMap()

@@ -17,6 +17,7 @@
       <el-menu-item index="spatiotemporal">时空动态</el-menu-item>
       <el-menu-item index="statistics">统计分析</el-menu-item>
       <el-menu-item index="road">路段分析</el-menu-item>
+      <el-menu-item index="road-advanced">路段智能分析</el-menu-item>
       <el-menu-item index="pattern">模式识别</el-menu-item>
     </el-menu>
     
