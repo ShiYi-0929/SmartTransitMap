@@ -1,5 +1,5 @@
 <template>
-  <div class="management-container">
+  <div class="management-container" :style="containerStyle">
     <div class="management-box">
       <button @click="$router.push('/home')" class="back-btn">&larr; 返回</button>
       <h2>用户个人信息管理</h2>
@@ -55,6 +55,7 @@
 
 <script>
 import defaultAvatar from "@/assets/head.jpg";
+import bg5 from "@/assets/bg5.png"; // Import the background image
 import { getUserProfile, updateUserProfile } from "@/api/user";
 import { applyForAdmin } from "@/api/admin";
 import { useMainStore } from "@/store";
@@ -86,6 +87,17 @@ export default {
     ...mapState(useMainStore, {
       pendingCount: "pendingApplicationsCount",
     }),
+    isAdmin() {
+      return localStorage.getItem("user-class")?.trim() === "管理员";
+    },
+    containerStyle() {
+      if (!this.isAdmin) {
+        return {
+          "background-image": `url(${bg5})`,
+        };
+      }
+      return {};
+    },
   },
   created() {
     this.fetchUserProfile();
@@ -197,7 +209,7 @@ export default {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: #f0f2f5 url("@/assets/bg5.png") no-repeat center center;
+  /* background: #f0f2f5 url("@/assets/bg5.png") no-repeat center center; */ /* This will be handled by :style now */
   background-size: cover;
   position: relative;
 }

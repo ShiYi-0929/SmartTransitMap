@@ -251,11 +251,12 @@ const handleClearAll = async () => {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: #f0f2f5 url("@/assets/bg5.png") no-repeat center center;
+  /* background: #f0f2f5 url("@/assets/bg5.png") no-repeat center center; */
   background-size: cover;
   position: relative;
 }
 
+/*
 .approval-container-wrapper::before {
   content: "";
   position: absolute;
@@ -266,6 +267,7 @@ const handleClearAll = async () => {
   background-color: rgba(0, 0, 0, 0.2);
   z-index: 1;
 }
+*/
 
 .approval-container {
   max-width: 1200px;
