@@ -1,83 +1,49 @@
-// store/index.js
-import { defineStore } from 'pinia'
+import { getPendingApplicationsCount, getUserProfile } from '@/api/user'; // 假设API路径
+import { defineStore } from 'pinia';
 
 export const useMainStore = defineStore('main', {
   state: () => ({
-    // 项目原有状态（用户信息）
     user: null,
-
-    // 你的状态（从 Vuex 迁移）
-    settings: {
-      theme: "light",
-      language: "zh-CN",
-      autoRefresh: true,
-    },
-    statistics: {
-      todayDetections: 0,
-      totalDamages: 0,
-      todayGrowth: 0,
-    },
-    alarms: [],
-    detectionHistory: [],
+    pendingApplicationsCount: 0,
   }),
-
   actions: {
-    // 项目原有 action（设置用户）
     setUser(user) {
-      this.user = user
+      this.user = user;
     },
-
-    // 你的 action（从 Vuex mutations/actions 迁移）
-    // 更新系统设置
-    updateSettings(settings) {
-      this.settings = { ...this.settings, ...settings }
+    setPendingApplicationsCount(count) {
+        this.pendingApplicationsCount = count;
     },
-
-    // 更新统计信息
-    async updateStatistics() {
-      try {
-        // 模拟 API 调用（替换为真实接口）
-        const mockStats = {
-          todayDetections: Math.floor(Math.random() * 50) + 10,
-          totalDamages: Math.floor(Math.random() * 100) + 20,
-          todayGrowth: Math.floor(Math.random() * 20) - 10,
+    async fetchPendingApplicationsCount() {
+        // 仅当用户是管理员时才获取
+        const userClass = localStorage.getItem('user-class');
+        const token = localStorage.getItem('token');
+        
+        // 如果没有token或者不是管理员，直接返回
+        if (!token || userClass !== '管理员') {
+            this.setPendingApplicationsCount(0);
+            return;
         }
-        this.statistics = { ...this.statistics, ...mockStats }
+        
+        try {
+            const response = await getPendingApplicationsCount();
+            this.setPendingApplicationsCount(response.pending_count);
+        } catch (error) {
+            console.error("获取待处理申请数量失败:", error);
+            this.setPendingApplicationsCount(0);
+            // 不显示错误通知，让全局错误处理器处理
+        }
+    },
+    async fetchUserProfile() {
+      try {
+        const userData = await getUserProfile();
+        this.setUser(userData);
+        // 获取用户信息后，接着获取待处理数量
+        await this.fetchPendingApplicationsCount();
       } catch (error) {
-        console.error("更新统计信息失败:", error)
+        console.error("获取用户信息失败:", error);
+        this.setUser(null);
+        // 不显示错误通知，让全局错误处理器处理
       }
-    },
-
-    // 添加告警
-    addAlarm(alarm) {
-      this.alarms.unshift({ id: Date.now(), ...alarm }) // 自动添加唯一id
-    },
-
-    // 移除告警
-    removeAlarm(alarmId) {
-      this.alarms = this.alarms.filter(alarm => alarm.id !== alarmId)
-    },
-
-    // 清空告警
-    clearAlarms() {
-      this.alarms = []
-    },
-
-    // 添加检测记录
-    addDetectionRecord(record) {
-      this.detectionHistory.unshift({
-        id: Date.now(),
-        timestamp: new Date(),
-        ...record
-      })
-    },
-  },
-
-  getters: {
-    // 你的 getters（从 Vuex getters 迁移）
-    getAlarmCount: (state) => state.alarms.length,
-    getSettings: (state) => state.settings,
-    getStatistics: (state) => state.statistics,
-    getDetectionHistory: (state) => state.detectionHistory,
+    }
   }
-})
+}); 

@@ -1,9 +1,9 @@
-import axios from 'axios'
+import axios from '@/utils/request'
 
 export function getLogs() {
-  return axios.get('/api/log/logs')
+  return axios.get('/log/logs')
 }
 
 export function sendAlert(message) {
-  return axios.post('/api/log/alert', { message })
+  return axios.post('/log/alert', { message })
 } 

@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>眨眼检测测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        video {
+            width: 400px;
+            height: 300px;
+            border: 2px solid #ccc;
+            margin: 10px 0;
+        }
+        canvas {
+            display: none;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .ear-display {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>眨眼检测测试</h1>
+    
+    <div>
+        <video id="video" autoplay></video>
+        <canvas id="canvas"></canvas>
+    </div>
+    
+    <div>
+        <button id="startCamera">启动摄像头</button>
+        <button id="startDetection" disabled>开始眨眼检测</button>
+        <button id="stopDetection" disabled>停止检测</button>
+    </div>
+    
+    <div id="status" class="status info">点击"启动摄像头"开始</div>
+    
+    <div class="ear-display">
+        <h3>眼部纵横比 (EAR):</h3>
+        <div>左眼: <span id="leftEar">--</span></div>
+        <div>右眼: <span id="rightEar">--</span></div>
+        <div>平均: <span id="avgEar">--</span></div>
+        <div>是否眨眼: <span id="isBlinking">--</span></div>
+    </div>
+    
+    <div>
+        <h3>检测历史:</h3>
+        <div id="history" style="max-height: 200px; overflow-y: auto; background-color: #f8f9fa; padding: 10px; border: 1px solid #dee2e6;"></div>
+    </div>
+
+    <script>
+        let video = document.getElementById('video');
+        let canvas = document.getElementById('canvas');
+        let ctx = canvas.getContext('2d');
+        let stream = null;
+        let detectionInterval = null;
+        
+        const status = document.getElementById('status');
+        const startCameraBtn = document.getElementById('startCamera');
+        const startDetectionBtn = document.getElementById('startDetection');
+        const stopDetectionBtn = document.getElementById('stopDetection');
+        const leftEarSpan = document.getElementById('leftEar');
+        const rightEarSpan = document.getElementById('rightEar');
+        const avgEarSpan = document.getElementById('avgEar');
+        const isBlinkingSpan = document.getElementById('isBlinking');
+        const historyDiv = document.getElementById('history');
+        
+        function updateStatus(message, type = 'info') {
+            status.textContent = message;
+            status.className = `status ${type}`;
+        }
+        
+        function addToHistory(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            historyDiv.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+            historyDiv.scrollTop = historyDiv.scrollHeight;
+        }
+        
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 640, height: 480 } 
+                });
+                video.srcObject = stream;
+                
+                video.onloadedmetadata = () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    updateStatus('摄像头已启动', 'success');
+                    startCameraBtn.disabled = true;
+                    startDetectionBtn.disabled = false;
+                    addToHistory('摄像头启动成功');
+                };
+            } catch (err) {
+                updateStatus('无法访问摄像头: ' + err.message, 'error');
+                addToHistory('摄像头启动失败: ' + err.message);
+            }
+        }
+        
+        function captureFrame() {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            return canvas.toDataURL('image/jpeg', 0.8);
+        }
+        
+        async function detectBlink() {
+            try {
+                const imageData = captureFrame();
+                
+                const response = await fetch('http://localhost:8000/api/face/detect_blink', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ image: imageData })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP错误: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                
+                // 更新显示
+                leftEarSpan.textContent = result.left_ear || '--';
+                rightEarSpan.textContent = result.right_ear || '--';
+                avgEarSpan.textContent = result.avg_ear || '--';
+                isBlinkingSpan.textContent = result.is_blinking ? '是' : '否';
+                isBlinkingSpan.style.color = result.is_blinking ? 'green' : 'red';
+                
+                if (result.is_blinking) {
+                    addToHistory('检测到眨眼！EAR: ' + result.avg_ear);
+                }
+                
+                updateStatus(`检测中... 人脸: ${result.has_face ? '是' : '否'}, 眨眼: ${result.is_blinking ? '是' : '否'}`, 'info');
+                
+            } catch (error) {
+                updateStatus('检测失败: ' + error.message, 'error');
+                addToHistory('检测错误: ' + error.message);
+                console.error('眨眼检测错误:', error);
+            }
+        }
+        
+        function startDetection() {
+            updateStatus('开始眨眼检测...', 'info');
+            addToHistory('开始眨眼检测');
+            startDetectionBtn.disabled = true;
+            stopDetectionBtn.disabled = false;
+            
+            // 每500毫秒检测一次
+            detectionInterval = setInterval(detectBlink, 500);
+        }
+        
+        function stopDetection() {
+            if (detectionInterval) {
+                clearInterval(detectionInterval);
+                detectionInterval = null;
+            }
+            updateStatus('检测已停止', 'info');
+            addToHistory('停止眨眼检测');
+            startDetectionBtn.disabled = false;
+            stopDetectionBtn.disabled = true;
+        }
+        
+        // 事件监听器
+        startCameraBtn.addEventListener('click', startCamera);
+        startDetectionBtn.addEventListener('click', startDetection);
+        stopDetectionBtn.addEventListener('click', stopDetection);
+        
+        // 页面卸载时清理资源
+        window.addEventListener('beforeunload', () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            if (detectionInterval) {
+                clearInterval(detectionInterval);
+            }
+        });
+    </script>
+</body>
+</html> 

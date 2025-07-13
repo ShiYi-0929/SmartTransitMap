@@ -10,13 +10,13 @@
 
 <script>
 export default {
-  name: 'AuthForm',
+  name: "AuthForm",
   methods: {
     handleSubmit() {
       // 可在子组件中重写此方法实现表单提交逻辑
-      console.log('表单提交触发');
-    }
-  }
+      console.log("表单提交触发");
+    },
+  },
 };
 </script>
 

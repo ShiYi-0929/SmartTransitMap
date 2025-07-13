@@ -1,42 +1,121 @@
-import { createRouter, createWebHistory } from "vue-router"
-import Home from "../pages/Home.vue"
-import Face from "../pages/Face.vue"
-import Road from "../pages/Road.vue"
-import Log from "../pages/Log.vue"
-import Traffic from "../pages/Traffic.vue"
-import AllViews from "../pages/AllViews.vue"
-import UserManagement from "../pages/UserManagement.vue"
+import { createRouter, createWebHistory } from 'vue-router';
+import Home from '@/pages/Home.vue';
+import Road from '@/pages/Road.vue';
+import Face from '@/pages/Face.vue';
+import Log from '@/pages/Log.vue';
+import Traffic from '@/pages/Traffic.vue';
+import UserManagement from '@/pages/UserManagement.vue';
+import ChangePassword from '@/pages/ChangePassword.vue';
+import Approval from '@/pages/Approval.vue';
+import AllViews from '@/pages/AllViews.vue';
+import { ElNotification } from 'element-plus'; // Import ElNotification
 
 const routes = [
-  { path: "/", component: AllViews },
-  { path: "/home", component: Home },
-  { path: "/face", component: Face },
-  { path: "/road", component: Road },
-  { path: "/log", component: Log },
-  { path: "/traffic", component: Traffic },
-  { path: "/user-management", component: UserManagement },
-]
+  {
+    path: '/',
+    name: 'AllViews',
+    component: AllViews,
+    meta: { guest: true } // Mark this as a guest-only route
+  },
+  {
+    path: '/home',
+    name: 'Home',
+    component: Home,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/road',
+    name: 'Road',
+    component: Road,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/face',
+    name: 'Face',
+    component: Face,
+    meta: { requiresAuth: true },
+    beforeEnter: (to, from, next) => {
+      const userClass = localStorage.getItem('user-class');
+      // 只阻止认证用户访问，管理员需要访问进行数据管理
+      if (userClass && userClass.trim() === '认证用户') {
+        ElNotification({
+          title: '访问限制',
+          message: '您已是认证用户，无需再次进入认证页面。',
+          type: 'info',
+        });
+        // Redirect to home page
+        return next({ name: 'Home' });
+      }
+      // Allow navigation
+      next();
+    }
+  },
+  {
+    path: '/log',
+    name: 'Log',
+    component: Log,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/traffic',
+    name: 'Traffic',
+    component: Traffic,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/user-management',
+    name: 'UserManagement',
+    component: UserManagement,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/change-password',
+    name: 'ChangePassword',
+    component: ChangePassword,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/approval',
+    name: 'Approval',
+    component: Approval,
+    meta: { requiresAuth: true, requiresAdmin: true }
+  }
+];
 
 const router = createRouter({
   history: createWebHistory(),
-  routes,
-})
+  routes
+});
 
 router.beforeEach((to, from, next) => {
-  const isAuthenticated = !!localStorage.getItem("user-token")
-  if (to.path === "/" && isAuthenticated) {
-    return next("/home")
-  }
-  const publicPages = ["/"]
-  const authRequired = !publicPages.includes(to.path)
-  if (authRequired && !isAuthenticated) {
-    if (to.path === "/home") {
-      return next(false) // 对首页静默取消导航
-    }
-    alert("请先登录")
-    return next(false) // 对其他页面提示并取消导航
-  }
-  next()
-})
+  const token = localStorage.getItem('token');
+  const userClass = localStorage.getItem('user-class'); 
+  const isAuthenticated = !!token;
 
-export default router
+  if (to.meta.requiresAuth && !isAuthenticated) {
+    ElNotification({
+      title: '访问受限',
+      message: '此页面需要登录，请先登录。',
+      type: 'warning'
+    });
+    return next('/');
+  }
+
+  if (to.meta.requiresAdmin && userClass?.trim() !== '管理员') {
+    ElNotification({
+      title: '权限不足',
+      message: '您没有权限访问此页面。',
+      type: 'error'
+    });
+    return next('/home');
+  }
+  
+  // 如果用户已登录，但尝试访问访客页面（如登录页），则重定向到主页
+  if (isAuthenticated && to.meta.guest) {
+      return next('/home');
+  }
+
+  next();
+});
+
+export default router; 
