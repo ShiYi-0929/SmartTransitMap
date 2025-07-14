@@ -5,6 +5,7 @@
       <h2 class="sidebar-title">人脸识别模块</h2>
       <nav class="sidebar-nav">
         <ul>
+          <!-- Non-admin tabs -->
           <template v-if="!isAdmin">
             <li
               :class="{ active: currentTab === 'face-enter' }"
@@ -19,19 +20,33 @@
               人脸验证
             </li>
           </template>
-          <li
-            v-if="isAdmin"
-            :class="{ active: currentTab === 'face-manage' }"
-            @click="currentTab = 'face-manage'"
-          >
-            人脸数据管理
-          </li>
+
+          <!-- Admin tabs -->
+          <template v-if="isAdmin">
+            <li
+              :class="{ active: currentTab === 'face-pending' }"
+              @click="currentTab = 'face-pending'"
+            >
+              待认证用户人脸数据
+              <span v-if="pendingFaces.length > 0" class="notification-badge">{{
+                pendingFaces.length
+              }}</span>
+            </li>
+            <li
+              :class="{ active: currentTab === 'face-manage' }"
+              @click="currentTab = 'face-manage'"
+            >
+              人脸数据管理
+            </li>
+          </template>
+
           <li @click="$router.push('/home')">返回首页</li>
         </ul>
       </nav>
     </aside>
     <!-- 右侧内容区域 -->
     <main class="main-content">
+      <!-- Face Entry Tab -->
       <section v-if="currentTab === 'face-enter'">
         <div class="enter-layout">
           <div class="left-column">
@@ -98,7 +113,7 @@
                 </div>
                 <div class="input-group">
                   <label>ID:</label>
-                  <input type="text" v-model="entryName" />
+                  <input type="text" v-model="entryName" disabled />
                 </div>
                 <div class="entry-buttons">
                   <button
@@ -126,6 +141,8 @@
           </div>
         </div>
       </section>
+
+      <!-- Face Verify Tab -->
       <section v-else-if="currentTab === 'face-verify'" class="verify-section">
         <div class="face-verify-box">
           <!-- Initial state before verification -->
@@ -172,7 +189,32 @@
           </template>
         </div>
       </section>
-      <section v-else class="manage-section">
+
+      <!-- Admin: Pending Faces Tab -->
+      <section
+        v-else-if="currentTab === 'face-pending' && isAdmin"
+        class="manage-section"
+      >
+        <div class="panel">
+          <div class="panel-header">待认证用户人脸数据</div>
+          <div class="panel-body manage-body">
+            <ul>
+              <li v-for="f in pendingFaces" :key="f.id" class="face-item">
+                <img :src="f.image" class="thumb" @click="viewAlbum(f)" />
+                <span>{{ f.id }}</span>
+                <div class="actions">
+                  <button class="btn btn-approve" @click="approveFace(f.id)">批准</button>
+                  <button class="btn btn-reject" @click="rejectFace(f.id)">拒绝</button>
+                </div>
+              </li>
+              <li v-if="!pendingFaces.length">暂无待认证数据</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Admin: Approved Faces Tab (the original management tab) -->
+      <section v-else-if="currentTab === 'face-manage' && isAdmin" class="manage-section">
         <div class="panel">
           <div class="panel-header">人脸数据管理</div>
           <div class="panel-body manage-body">
@@ -282,6 +324,8 @@
 
 <script>
 import avatar from "@/assets/avatar.png";
+import { useMainStore } from "@/store";
+import { getUserProfile } from "@/api/user"; // 引入API
 
 export default {
   name: "FaceRecognition",
@@ -290,7 +334,7 @@ export default {
     const isAdmin = userRole === "管理员";
 
     return {
-      currentTab: isAdmin ? "face-manage" : "face-enter", // 默认显示人脸验证 tab，可根据需求调整
+      currentTab: isAdmin ? "face-pending" : "face-enter", // 默认显示人脸验证 tab，可根据需求调整
       avatarImage: avatar,
       isVerifying: false,
       verifyStream: null,
@@ -340,6 +384,8 @@ export default {
       blinkDetected: false, // 是否检测到有效眨眼
       blinkHistory: [], // 眨眼状态历史
       lastBlinkTime: 0, // 上次眨眼时间
+      pendingFaces: [], // For admin pending approvals
+      refreshOnSuccess: false, // 控制成功后是否刷新页面
     };
   },
   computed: {
@@ -388,12 +434,27 @@ export default {
         this.stopRealtimeFaceCheck();
       }
 
-      if (newTab === "face-manage") {
-        this.fetchFaces();
+      if (newTab === "face-manage" || newTab === "face-pending") {
+        if (this.isAdmin) {
+          this.fetchApprovedFaces();
+          this.fetchPendingFaces();
+        }
+      } else if (newTab === "face-enter" && !this.isAdmin) {
+        this.fetchCurrentUserId();
       }
     },
   },
   methods: {
+    async fetchCurrentUserId() {
+      if (this.isAdmin) return; // 管理员不需要此操作
+      try {
+        const profile = await getUserProfile();
+        this.entryName = String(profile.userID); // Ensure the ID is a string
+      } catch (error) {
+        console.error("获取用户ID失败:", error);
+        this.showMsg("无法加载您的用户ID，请刷新页面或重新登录。");
+      }
+    },
     startRealtimeFaceCheck() {
       if (this.faceDetectionInterval) return; // 防止重复启动
 
@@ -607,7 +668,12 @@ export default {
           return res.json();
         })
         .then(() => {
-          this.showMsg("录入成功！");
+          const store = useMainStore();
+          this.showMsg("录入成功，请等待管理员复核！");
+          // 清除可能存在的拒绝标记，以便轮询可以重新开始
+          localStorage.removeItem("hasSeenRejection");
+          store.setPollingState(true); // 启动轮询
+          this.refreshOnSuccess = true; // 设置刷新标志
           // Reset form
           this.entryName = "";
           this.snapshotDataUrl = null;
@@ -828,11 +894,19 @@ export default {
       this.isVerifying = false;
       this.verifyResult = "";
     },
-    fetchFaces() {
-      fetch(`${this.API_BASE}/faces`)
+    fetchApprovedFaces() {
+      fetch(`${this.API_BASE}/faces?status=approved`, { cache: "no-cache" })
         .then((r) => r.json())
         .then((j) => {
           this.facesList = j.faces || [];
+        })
+        .catch(console.error);
+    },
+    fetchPendingFaces() {
+      fetch(`${this.API_BASE}/faces?status=pending`, { cache: "no-cache" })
+        .then((r) => r.json())
+        .then((j) => {
+          this.pendingFaces = j.faces || [];
         })
         .catch(console.error);
     },
@@ -846,7 +920,7 @@ export default {
         })
         .then(() => {
           this.showMsg("删除成功！");
-          this.fetchFaces(); // 重新加载列表
+          this.fetchApprovedFaces(); // 重新加载列表
         })
         .catch((err) => {
           console.error(err);
@@ -917,7 +991,7 @@ export default {
         .then((r) => r.json())
         .then(() => {
           // 更新管理列表显示
-          this.fetchFaces();
+          this.fetchApprovedFaces();
           this.showMsg("ID 已更新");
         })
         .catch((err) => {
@@ -949,7 +1023,7 @@ export default {
           this.editorImages = this.editorImages.filter(
             (i) => i !== this.pendingDeleteImage
           );
-          this.fetchFaces();
+          this.fetchApprovedFaces();
         })
         .catch((err) => {
           console.error(err);
@@ -978,6 +1052,11 @@ export default {
     closeMsgModal() {
       this.msgModalVisible = false;
       this.msgModalText = "";
+      // 如果是在成功录入后，则跳转到主页
+      if (this.refreshOnSuccess) {
+        this.refreshOnSuccess = false; // 重置标志
+        this.$router.push('/home'); // 跳转到主页
+      }
     },
     // ===== 用户删除弹窗相关 =====
     askDeleteFace(personId) {
@@ -994,6 +1073,35 @@ export default {
       this.deleteFaceModalVisible = false;
       this.pendingDeleteFaceId = "";
     },
+    async approveFace(personId) {
+      try {
+        const response = await fetch(`${this.API_BASE}/approve/${personId}`, {
+          method: "POST",
+        });
+        if (!response.ok) throw new Error("Approval failed");
+        this.showMsg(`用户 ${personId} 已批准`);
+        this.fetchApprovedFaces();
+        this.fetchPendingFaces();
+        useMainStore().fetchPendingFacesCount(); // 更新角标
+      } catch (err) {
+        console.error(err);
+        this.showMsg("批准操作失败");
+      }
+    },
+    async rejectFace(personId) {
+      try {
+        const response = await fetch(`${this.API_BASE}/reject/${personId}`, {
+          method: "POST",
+        });
+        if (!response.ok) throw new Error("Rejection failed");
+        this.showMsg(`用户 ${personId} 已拒绝`);
+        this.fetchPendingFaces(); // Only need to refresh pending list
+        useMainStore().fetchPendingFacesCount(); // 更新角标
+      } catch (err) {
+        console.error(err);
+        this.showMsg("拒绝操作失败");
+      }
+    },
     // 取消当前拍摄，清空数据
     cancelCapture() {
       // 清空拍摄相关数据
@@ -1004,8 +1112,10 @@ export default {
       this.progress = 0;
       this.guidanceText = "准备...";
 
-      // 清空ID输入框
+      // 清空ID输入框并重置编辑状态
       this.entryName = "";
+      this.editingId = null;
+      this.editingOriginalName = "";
 
       // 清除定时器
       if (this.captureInterval) {
@@ -1013,17 +1123,22 @@ export default {
         this.captureInterval = null;
       }
 
-      // 重置编辑状态
-      this.editingId = null;
-      this.editingOriginalName = "";
+      // For regular users, immediately re-fetch their ID
+      if (!this.isAdmin) {
+        this.fetchCurrentUserId();
+      }
     },
   },
   mounted() {
-    if (this.currentTab === 'face-enter') {
-      this.startEntryCamera();
-      this.startRealtimeFaceCheck(); // 初次加载即启动范围检测
-    } else if (this.currentTab === 'face-manage') {
-      this.fetchFaces(); // 管理员进入时直接加载人脸数据
+    if (this.isAdmin) {
+      this.fetchApprovedFaces();
+      this.fetchPendingFaces();
+    } else {
+      if (this.currentTab === "face-enter") {
+        this.startEntryCamera();
+        this.startRealtimeFaceCheck();
+        this.fetchCurrentUserId(); // 获取当前用户ID
+      }
     }
   },
   unmounted() {
@@ -1059,6 +1174,7 @@ export default {
   padding: 10px 0;
   cursor: pointer;
   transition: background-color 0.3s ease;
+  position: relative; /* For badge positioning */
 }
 .sidebar-nav li:hover {
   background-color: #081e2b;
@@ -1327,20 +1443,28 @@ export default {
   justify-content: center;
   align-items: flex-start;
   padding-top: 20px;
+  height: 60%; /* Ensure section takes full height */
 }
 .manage-section .panel {
   width: 60%;
   min-width: 500px;
+  max-height: 70vh; /* Adjust for padding-top */
+  display: flex;
+  flex-direction: column;
 }
 .manage-body {
   flex-direction: column;
   justify-content: flex-start;
   align-items: stretch;
+  overflow: hidden; /* Hide overflow from body */
 }
 .manage-body ul {
   list-style: none;
   padding: 0;
+  margin: 0; /* Reset margin */
   width: 100%;
+  overflow-y: auto; /* Make the list scrollable */
+  padding-right: 15px; /* Add space for scrollbar */
 }
 .manage-body li {
   padding: 12px 10px;
@@ -1548,5 +1672,31 @@ export default {
 
 .admin-theme .search-bar input {
   background-color: #fff0f0;
+}
+
+.notification-badge {
+  position: absolute;
+  top: 5px;
+  right: 10px;
+  background-color: #dc3545;
+  color: white;
+  border-radius: 10px;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.btn-approve {
+  background-color: #28a745;
+}
+.btn-approve:hover {
+  background-color: #218838;
+}
+
+.btn-reject {
+  background-color: #dc3545;
+}
+.btn-reject:hover {
+  background-color: #c82333;
 }
 </style>
