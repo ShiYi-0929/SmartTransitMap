@@ -41,15 +41,15 @@ const routes = [
       const userClass = localStorage.getItem('user-class')?.trim();
       const store = useMainStore(); // 获取store实例
       
-      // 逻辑1: 已认证用户禁止访问
-      if (userClass === '认证用户') {
-        ElNotification({
-          title: '访问限制',
-          message: '您已是认证用户，无需再次进入认证页面。',
-          type: 'info',
-        });
-        return next({ name: 'Home' });
-      }
+      // 逻辑1: 已认证用户禁止访问 - 此段逻辑将被移除或修改
+      // if (userClass === '认证用户') {
+      //   ElNotification({
+      //     title: '访问限制',
+      //     message: '您已是认证用户，无需再次进入认证页面。',
+      //     type: 'info',
+      //   });
+      //   return next({ name: 'Home' });
+      // }
 
       // 逻辑2: 普通用户根据状态进行不同处理
       if (userClass === '普通用户') {
