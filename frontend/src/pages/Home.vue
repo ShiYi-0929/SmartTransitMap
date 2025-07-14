@@ -154,13 +154,9 @@ const handleAuthClick = () => {
     return; // 终止后续操作
   }
   
-  // 场景2：已认证用户（非降级状态）点击，提示无需重复认证
+  // 场景2：已认证用户（非降级状态）点击，直接跳转到人脸验证页面
   if (isAuthenticatedUser.value) {
-    ElNotification({
-      title: "提示",
-      message: "您已是认证用户，无需重复认证！",
-      type: "info",
-    });
+    router.push("/face");
     return;
   }
   
