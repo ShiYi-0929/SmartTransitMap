@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Path, Body
+from fastapi import APIRouter, HTTPException, Path, Body, Depends
+from sqlalchemy.orm import Session
 from fastapi.responses import FileResponse
 from typing import List, Optional, Set
 import os, pickle, base64, io, datetime, csv, uuid
@@ -6,6 +7,13 @@ import numpy as np
 from pydantic import BaseModel
 from PIL import Image
 import face_recognition
+
+# Database imports
+from database.database import get_db
+from database import models
+# 引入邮件服务
+from app.core.email import send_approval_email, send_rejection_email
+from app.core.security import get_current_user
 
 # 可选导入dlib相关模块
 try:
@@ -132,23 +140,35 @@ def save_db(db: List[dict]):
     with open(ENC_FILE, "wb") as f:
         pickle.dump(db, f)
 
-def upsert_csv(person_id: str, name: str, filename: str):
+def upsert_csv(person_id: str, name: str, filename: str, status: str = 'pending'):
     rows = []
     found = False
+    fieldnames = ["id", "name", "image", "images", "status"]
     if os.path.exists(CSV_FILE):
         with open(CSV_FILE, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
+            # Ensure fieldnames from file are used if they exist, but include new ones
+            file_fieldnames = reader.fieldnames or []
+            fieldnames = file_fieldnames + [fn for fn in fieldnames if fn not in file_fieldnames]
+
             for row in reader:
                 if row.get("id") == person_id:
+                    # This logic is for adding more images to an existing user,
+                    # so their status should remain unchanged (likely 'approved').
                     imgs = row.get("images", "").split(",") if row.get("images") else []
-                    imgs.append(filename)
-                    row.update({"name": name, "image": filename, "images": ",".join(imgs)})
+                    if filename not in imgs:
+                         imgs.append(filename)
+                    row["images"] = ",".join(imgs)
+                    # Don't change status when just adding an image to an existing user
                     found = True
                 rows.append(row)
+
     if not found:
-        rows.append({"id": person_id, "name": name, "image": filename, "images": filename})
+        # A new entry
+        rows.append({"id": person_id, "name": name, "image": filename, "images": filename, "status": status})
+    
     with open(CSV_FILE, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["id", "name", "image", "images"])
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
 
@@ -165,7 +185,8 @@ def read_csv_records() -> List[dict]:
                 "id": row.get("id", ""),
                 "name": row.get("name", ""),
                 "image": img_url,
-                "images": row.get("images", "")
+                "images": row.get("images", ""),
+                "status": row.get("status", "approved") # Default old records to 'approved'
             })
         return records
 
@@ -409,8 +430,175 @@ async def verify(body: VerifyBody):
     return {"result": known_faces[idx]["name"] if dists[idx]<0.5 else "unknown"}
 
 @router.get("/faces")
-async def list_faces():
-    return {"faces": read_csv_records()}
+async def list_faces(status: Optional[str] = None):
+    records = read_csv_records()
+    if status:
+        return {"faces": [r for r in records if r['status'] == status]}
+    # Default to approved if no status is given
+    return {"faces": [r for r in records if r['status'] == 'approved']}
+
+
+@router.get("/faces/count")
+async def count_faces(status: str):
+    records = read_csv_records()
+    count = sum(1 for r in records if r.get('status') == status)
+    return {"pending_count": count}
+
+
+@router.post("/approve/{person_id}")
+async def approve_face(person_id: str, db: Session = Depends(get_db)):
+    records = []
+    found = False
+    if not os.path.exists(CSV_FILE):
+        raise HTTPException(404, "CSV file not found")
+    
+    with open(CSV_FILE, 'r', newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames
+        for row in reader:
+            if row['id'] == person_id:
+                row['status'] = 'approved'
+                found = True
+            records.append(row)
+
+    if not found:
+        raise HTTPException(404, "Person ID not found")
+        
+    with open(CSV_FILE, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(records)
+
+    # 发送邮件并更新数据库
+    user = None
+    try:
+        user = db.query(models.UserInfo).filter(models.UserInfo.userID == int(person_id)).first()
+        if user:
+            user.user_class = '认证用户'
+            db.commit()
+            # 发送批准邮件
+            send_approval_email(user.email, user.username)
+        else:
+            print(f"在数据库中未找到ID为 {person_id} 的用户，无法更新权限或发送邮件。")
+
+    except Exception as e:
+        # 如果DB操作或邮件发送失败，记录错误但CSV操作仍然成功
+        print(f"批准用户 {person_id} 时更新数据库或发送邮件失败: {e}")
+        db.rollback()
+
+    return {"msg": f"User {person_id} approved."}
+
+
+async def _delete_user_face_data(person_id: str):
+    """
+    内部辅助函数，用于删除用户的人脸数据。
+    这个函数会处理所有相关的删除操作：CSV, PKL, 和图像文件。
+    """
+    global known_faces
+    all_records = read_csv_records()
+    record_to_delete = None
+    records_to_keep_csv = []
+    
+    found = False
+    for r in all_records:
+        if r.get("id") == person_id:
+            record_to_delete = r
+            found = True
+        else:
+            records_to_keep_csv.append(r)
+
+    if not found:
+        raise HTTPException(404, "用户不存在")
+
+    # 1. 从内存和 PKL 文件中删除
+    known_faces = [face for face in known_faces if face["id"] != person_id]
+    save_db(known_faces)
+
+    # 2. 从文件系统中删除图片
+    filenames: Set[str] = set()
+    if record_to_delete.get("image"):
+        filenames.add(os.path.basename(record_to_delete["image"]))
+    imgs_field = record_to_delete.get("images", "")
+    if imgs_field:
+        for fn in [s.strip() for s in imgs_field.split(",") if s.strip()]:
+            filenames.add(os.path.basename(fn))
+    
+    for fn in filenames:
+        fp = os.path.join(IMAGES_DIR, fn)
+        if os.path.exists(fp):
+            try:
+                os.remove(fp)
+            except OSError as e:
+                print(f"删除图片失败 {fp}: {e}")
+
+    # 3. 从 CSV 文件中删除记录
+    rewrite_csv(records_to_keep_csv)
+    
+    return record_to_delete
+
+
+@router.post("/reject/{person_id}")
+async def reject_face(person_id: str, db: Session = Depends(get_db)):
+    """
+    管理员拒绝用户认证申请。
+    此操作仅将用户在CSV中的状态更新为'rejected'，并发送邮件。
+    它不会删除用户数据，以便前端可以轮询到此状态。
+    """
+    # 1. 查找用户以发送邮件
+    user = None
+    try:
+        user = db.query(models.UserInfo).filter(models.UserInfo.userID == int(person_id)).first()
+        if user:
+            send_rejection_email(user.email, user.username)
+        else:
+            print(f"在数据库中未找到ID为 {person_id} 的用户，无法发送拒绝邮件。")
+    except Exception as e:
+        print(f"为用户 {person_id} 发送拒绝邮件时失败: {e}")
+
+    # 2. 更新CSV文件中的状态为 'rejected'
+    records = []
+    found = False
+    if not os.path.exists(CSV_FILE):
+        raise HTTPException(404, "CSV file not found")
+
+    with open(CSV_FILE, 'r', newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames or ["id", "name", "image", "images", "status"]
+        for row in reader:
+            if row.get('id') == person_id:
+                row['status'] = 'rejected'
+                found = True
+            records.append(row)
+
+    if not found:
+        raise HTTPException(404, "Person ID not found in CSV")
+
+    with open(CSV_FILE, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(records)
+
+    return {"msg": f"用户 {person_id} 的认证申请已被标记为拒绝。"}
+
+
+@router.post("/cleanup", summary="用户确认后清理自己的人脸数据")
+async def cleanup_my_face_data(current_user: models.UserInfo = Depends(get_current_user)):
+    """
+    由用户自己触发，用于清理被拒绝或不再需要的人脸数据。
+    """
+    person_id = str(current_user.userID)
+    try:
+        await _delete_user_face_data(person_id)
+        return {"msg": f"用户 {person_id} 的数据已成功清理。"}
+    except HTTPException as e:
+        # 如果用户不存在于人脸数据中，这不算是一个错误，静默处理即可。
+        if e.status_code == 404:
+            return {"msg": "无需清理，未找到用户的人脸数据。"}
+        raise e
+    except Exception as e:
+        print(f"清理用户 {person_id} 的数据时出错: {e}")
+        raise HTTPException(status_code=500, detail="清理数据时发生内部错误。")
+
 
 @router.post("/check_face_in_frame")
 async def check_face_in_frame(body: CheckFaceBody):
@@ -479,59 +667,62 @@ async def detect_blink_api(body: BlinkDetectionBody):
 
 # ---- 补全缺失的管理接口 ----
 def rewrite_csv(records_to_keep: List[dict]):
+    """用给定的记录重写CSV文件。"""
     if not records_to_keep:
+        # 如果没有记录了，就清空文件或删除文件
         if os.path.exists(CSV_FILE):
             os.remove(CSV_FILE)
         return
+
+    # 确保字段名是完整的，即使第一条记录缺少某些字段
+    fieldnames = ["id", "name", "image", "images", "status"]
+    
     with open(CSV_FILE, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["id", "name", "image", "images"])
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        # 修正：确保在重写时，从完整的 URL 中提取纯文件名
-        updated_rows = []
-        for r in records_to_keep:
-            image_filename = os.path.basename(r["image"]) if r.get("image") else ""
-            updated_rows.append({
-                "id": r["id"],
-                "name": r["name"],
-                "image": image_filename,
-                "images": r.get("images", "")
-            })
-        writer.writerows(updated_rows)
+        
+        # 写入时要确保所有字段都存在
+        for record in records_to_keep:
+            # 提供默认值以防万一
+            full_record = {
+                "id": record.get("id"),
+                "name": record.get("name"),
+                "image": record.get("image"),
+                "images": record.get("images"),
+                "status": record.get("status")
+            }
+            writer.writerow(full_record)
 
-@router.delete("/faces/{person_id}")
-async def delete_face(person_id: str = Path(...)):
-    global known_faces
-    all_records = read_csv_records()
-    record_to_delete = None
-    records_to_keep_csv = []
-    for r in all_records:
-        if r.get("id") == person_id:
-            record_to_delete = r
+@router.delete("/faces/{person_id}", summary="管理员删除指定用户的所有人脸数据并降级用户")
+async def delete_face(person_id: str = Path(...), db: Session = Depends(get_db)):
+    """
+    1.  从CSV中删除用户记录.
+    2.  删除用户的图片文件.
+    3.  从pkl编码文件中删除编码.
+    4.  将数据库中的用户等级降为'普通用户'.
+    """
+    await _delete_user_face_data(person_id)
+
+    # 将用户降级
+    try:
+        user_to_demote = db.query(models.UserInfo).filter(models.UserInfo.userID == int(person_id)).first()
+        if user_to_demote:
+            if user_to_demote.user_class == "认证用户":
+                user_to_demote.user_class = "普通用户"
+                db.commit()
+                print(f"用户 {person_id} 已被降级为 '普通用户'")
+            else:
+                print(f"用户 {person_id} 等级为 '{user_to_demote.user_class}'，无需降级。")
         else:
-            records_to_keep_csv.append(r)
-    if not record_to_delete:
-        raise HTTPException(404, "用户不存在")
-    
-    known_faces = [face for face in known_faces if face["id"] != person_id]
-    save_db(known_faces)
+             print(f"数据库中未找到用户 {person_id}，无法执行降级。")
 
-    filenames: Set[str] = set()
-    if record_to_delete.get("image"):
-        # 从完整 URL 中提取文件名
-        filenames.add(os.path.basename(record_to_delete["image"]))
-    imgs_field = record_to_delete.get("images", "")
-    if imgs_field:
-        for fn in [s.strip() for s in imgs_field.split(",") if s.strip()]:
-            filenames.add(os.path.basename(fn))
-    
-    for fn in filenames:
-        fp = os.path.join(IMAGES_DIR, fn)
-        if os.path.exists(fp):
-            try: os.remove(fp)
-            except OSError: pass
-    
-    rewrite_csv(records_to_keep_csv)
-    return {"msg": "用户已删除", "person_id": person_id}
+    except Exception as e:
+        db.rollback()
+        # 即使降级失败，文件数据已被删除，所以这里只记录错误而不抛出HTTP异常
+        print(f"尝试降级用户 {person_id} 时发生数据库错误: {e}")
+
+    return {"message": f"用户 {person_id} 的人脸数据已删除并尝试降级"}
+
 
 @router.get("/faces/{person_id}/images")
 async def list_person_images(person_id: str):
