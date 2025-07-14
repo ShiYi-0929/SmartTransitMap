@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>订单速度分析测试</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-title {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .test-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .test-button:hover {
+            background: #0056b3;
+        }
+        .test-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .result-box {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success {
+            color: #28a745;
+        }
+        .error {
+            color: #dc3545;
+        }
+        .warning {
+            color: #ffc107;
+        }
+        .info {
+            color: #17a2b8;
+        }
+        .config-panel {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        .config-group {
+            margin-bottom: 10px;
+        }
+        .config-group label {
+            display: inline-block;
+            width: 150px;
+            font-weight: bold;
+        }
+        .config-group select, .config-group input {
+            width: 200px;
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .status-online {
+            background-color: #28a745;
+        }
+        .status-offline {
+            background-color: #dc3545;
+        }
+        .status-unknown {
+            background-color: #ffc107;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🚗 订单速度分析功能测试</h1>
+    
+    <!-- 系统状态检查 -->
+    <div class="test-container">
+        <h2 class="test-title">📊 系统状态检查</h2>
+        <div id="system-status">
+            <p><span class="status-indicator status-unknown"></span>后端服务状态: <span id="backend-status">检查中...</span></p>
+            <p><span class="status-indicator status-unknown"></span>API路由状态: <span id="api-status">检查中...</span></p>
+            <p><span class="status-indicator status-unknown"></span>数据库连接: <span id="db-status">检查中...</span></p>
+        </div>
+        <button class="test-button" onclick="checkSystemStatus()">🔍 检查系统状态</button>
+        <div id="status-result" class="result-box" style="display: none;"></div>
+    </div>
+
+    <!-- 网络连接测试 -->
+    <div class="test-container">
+        <h2 class="test-title">🌐 网络连接测试</h2>
+        <button class="test-button" onclick="testNetworkConnection()">🔗 测试网络连接</button>
+        <button class="test-button" onclick="testCORS()">🔄 测试CORS配置</button>
+        <button class="test-button" onclick="testProxy()">🔀 测试代理配置</button>
+        <div id="network-result" class="result-box" style="display: none;"></div>
+    </div>
+
+    <!-- API接口测试 -->
+    <div class="test-container">
+        <h2 class="test-title">🔧 API接口测试</h2>
+        <div class="config-panel">
+            <div class="config-group">
+                <label>分析范围:</label>
+                <select id="include-short-medium">
+                    <option value="true">仅中短途订单(≤8km)</option>
+                    <option value="false">全部订单</option>
+                </select>
+            </div>
+            <div class="config-group">
+                <label>空间分辨率:</label>
+                <select id="spatial-resolution">
+                    <option value="0.001">高精度(100m)</option>
+                    <option value="0.005">中等(500m)</option>
+                    <option value="0.01">低精度(1km)</option>
+                </select>
+            </div>
+            <div class="config-group">
+                <label>最小订单数:</label>
+                <input type="number" id="min-orders" value="5" min="3" max="20">
+            </div>
+        </div>
+        <button class="test-button" onclick="testBasicAPI()">🧪 基础API测试</button>
+        <button class="test-button" onclick="testSpeedAnalysisAPI()">⚡ 速度分析API测试</button>
+        <button class="test-button" onclick="testWithDifferentParams()">🔄 参数变化测试</button>
+        <div id="api-result" class="result-box" style="display: none;"></div>
+    </div>
+
+    <!-- 数据格式测试 -->
+    <div class="test-container">
+        <h2 class="test-title">📋 数据格式测试</h2>
+        <button class="test-button" onclick="testDataFormat()">📊 测试数据格式</button>
+        <button class="test-button" onclick="validateResponse()">✅ 验证响应格式</button>
+        <button class="test-button" onclick="testErrorHandling()">❌ 测试错误处理</button>
+        <div id="data-result" class="result-box" style="display: none;"></div>
+    </div>
+
+    <!-- 性能测试 -->
+    <div class="test-container">
+        <h2 class="test-title">⚡ 性能测试</h2>
+        <button class="test-button" onclick="testPerformance()">🚀 性能测试</button>
+        <button class="test-button" onclick="testConcurrency()">🔄 并发测试</button>
+        <button class="test-button" onclick="testTimeout()">⏱️ 超时测试</button>
+        <div id="performance-result" class="result-box" style="display: none;"></div>
+    </div>
+
+    <!-- 完整功能测试 -->
+    <div class="test-container">
+        <h2 class="test-title">🎯 完整功能测试</h2>
+        <button class="test-button" onclick="runFullTest()">🔄 运行完整测试</button>
+        <button class="test-button" onclick="clearResults()">🗑️ 清除结果</button>
+        <div id="full-test-result" class="result-box" style="display: none;"></div>
+    </div>
+
+    <script>
+        // 配置axios默认设置
+        axios.defaults.timeout = 30000; // 30秒超时
+        axios.defaults.baseURL = 'http://localhost:8082'; // 前端开发服务器地址
+
+        // 工具函数
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type;
+            return `<div class="${className}">[${timestamp}] ${message}</div>`;
+        }
+
+        function updateResult(elementId, content, append = false) {
+            const element = document.getElementById(elementId);
+            element.style.display = 'block';
+            if (append) {
+                element.innerHTML += content;
+            } else {
+                element.innerHTML = content;
+            }
+        }
+
+        function getConfig() {
+            return {
+                include_short_medium_only: document.getElementById('include-short-medium').value === 'true',
+                spatial_resolution: parseFloat(document.getElementById('spatial-resolution').value),
+                min_orders_per_location: parseInt(document.getElementById('min-orders').value)
+            };
+        }
+
+        // 系统状态检查
+        async function checkSystemStatus() {
+            let result = log('开始系统状态检查...', 'info');
+            updateResult('status-result', result);
+
+            try {
+                // 检查后端服务
+                result += log('检查后端服务 (http://localhost:8000)...', 'info');
+                updateResult('status-result', result);
+
+                const backendResponse = await axios.get('/api/traffic/summary');
+                result += log(`✅ 后端服务正常 (状态码: ${backendResponse.status})`, 'success');
+                document.getElementById('backend-status').innerHTML = '✅ 在线';
+                document.querySelector('#system-status .status-indicator').className = 'status-indicator status-online';
+
+                // 检查API路由
+                result += log('检查API路由...', 'info');
+                const routeResponse = await axios.get('/api/traffic/files/info');
+                result += log(`✅ API路由正常`, 'success');
+                document.getElementById('api-status').innerHTML = '✅ 正常';
+
+                updateResult('status-result', result);
+
+            } catch (error) {
+                result += log(`❌ 系统检查失败: ${error.message}`, 'error');
+                if (error.response) {
+                    result += log(`HTTP状态: ${error.response.status}`, 'error');
+                    result += log(`响应数据: ${JSON.stringify(error.response.data)}`, 'error');
+                }
+                document.getElementById('backend-status').innerHTML = '❌ 离线';
+                document.querySelector('#system-status .status-indicator').className = 'status-indicator status-offline';
+                updateResult('status-result', result);
+            }
+        }
+
+        // 网络连接测试
+        async function testNetworkConnection() {
+            let result = log('开始网络连接测试...', 'info');
+            updateResult('network-result', result);
+
+            const tests = [
+                { name: '本地后端', url: '/api/traffic/summary' },
+                { name: '直接后端', url: 'http://localhost:8000/api/traffic/summary' },
+                { name: '健康检查', url: '/api/traffic/files/info' }
+            ];
+
+            for (const test of tests) {
+                try {
+                    result += log(`测试 ${test.name}: ${test.url}`, 'info');
+                    const startTime = Date.now();
+                    const response = await axios.get(test.url);
+                    const endTime = Date.now();
+                    result += log(`✅ ${test.name} 成功 (${endTime - startTime}ms, 状态: ${response.status})`, 'success');
+                } catch (error) {
+                    result += log(`❌ ${test.name} 失败: ${error.message}`, 'error');
+                }
+                updateResult('network-result', result);
+            }
+        }
+
+        // CORS测试
+        async function testCORS() {
+            let result = log('开始CORS配置测试...', 'info');
+            updateResult('network-result', result, true);
+
+            try {
+                const response = await axios.options('/api/traffic/summary');
+                result += log(`✅ CORS预检请求成功`, 'success');
+                result += log(`CORS头信息: ${JSON.stringify(response.headers)}`, 'info');
+            } catch (error) {
+                result += log(`❌ CORS测试失败: ${error.message}`, 'error');
+            }
+            updateResult('network-result', result, true);
+        }
+
+        // 代理测试
+        async function testProxy() {
+            let result = log('开始代理配置测试...', 'info');
+            updateResult('network-result', result, true);
+
+            try {
+                // 测试代理是否正确转发请求
+                const response = await axios.get('/api/traffic/summary', {
+                    headers: {
+                        'X-Test-Proxy': 'true'
+                    }
+                });
+                result += log(`✅ 代理转发成功`, 'success');
+                result += log(`响应来源: ${response.headers['server'] || '未知'}`, 'info');
+            } catch (error) {
+                result += log(`❌ 代理测试失败: ${error.message}`, 'error');
+            }
+            updateResult('network-result', result, true);
+        }
+
+        // 基础API测试
+        async function testBasicAPI() {
+            let result = log('开始基础API测试...', 'info');
+            updateResult('api-result', result);
+
+            const basicAPIs = [
+                { name: '交通概要', url: '/api/traffic/summary' },
+                { name: '文件信息', url: '/api/traffic/files/info' },
+                { name: '路段信息', url: '/api/traffic/road/segments' }
+            ];
+
+            for (const api of basicAPIs) {
+                try {
+                    result += log(`测试 ${api.name}: ${api.url}`, 'info');
+                    const response = await axios.get(api.url);
+                    result += log(`✅ ${api.name} API 正常`, 'success');
+                    result += log(`数据大小: ${JSON.stringify(response.data).length} 字符`, 'info');
+                } catch (error) {
+                    result += log(`❌ ${api.name} API 失败: ${error.message}`, 'error');
+                }
+                updateResult('api-result', result);
+            }
+        }
+
+        // 速度分析API测试
+        async function testSpeedAnalysisAPI() {
+            let result = log('开始速度分析API测试...', 'info');
+            updateResult('api-result', result, true);
+
+            const config = getConfig();
+            result += log(`测试配置: ${JSON.stringify(config, null, 2)}`, 'info');
+
+            try {
+                const startTime = 1378944000;  // 2013-09-12 00:00:00 UTC
+                const endTime = 1379548799;    // 2013-09-18 23:59:59 UTC
+                const url = `/api/traffic/road/order-speed-analysis?start_time=${startTime}&end_time=${endTime}`;
+                
+                result += log(`请求URL: ${url}`, 'info');
+                result += log(`请求方法: POST`, 'info');
+                result += log(`请求体: ${JSON.stringify(config, null, 2)}`, 'info');
+
+                const requestStart = Date.now();
+                const response = await axios.post(url, config);
+                const requestEnd = Date.now();
+
+                result += log(`✅ 速度分析API调用成功!`, 'success');
+                result += log(`请求耗时: ${requestEnd - requestStart}ms`, 'info');
+                result += log(`响应状态: ${response.status}`, 'success');
+                result += log(`响应数据结构:`, 'info');
+                result += `<pre>${JSON.stringify(response.data, null, 2)}</pre>`;
+
+                // 验证响应数据结构
+                if (response.data.success) {
+                    result += log(`✅ 分析成功: ${response.data.message}`, 'success');
+                    if (response.data.speed_analysis) {
+                        const analysis = response.data.speed_analysis;
+                        result += log(`📊 分析结果统计:`, 'info');
+                        result += log(`  - 速度数据点: ${analysis.speed_data?.length || 0}`, 'info');
+                        result += log(`  - 热力图数据: ${analysis.heatmap_data?.length || 0}`, 'info');
+                        result += log(`  - 拥堵摘要: ${Object.keys(analysis.congestion_summary || {}).length} 项`, 'info');
+                    }
+                } else {
+                    result += log(`⚠️ 分析失败: ${response.data.message}`, 'warning');
+                }
+
+            } catch (error) {
+                result += log(`❌ 速度分析API测试失败!`, 'error');
+                result += log(`错误类型: ${error.constructor.name}`, 'error');
+                result += log(`错误消息: ${error.message}`, 'error');
+                
+                if (error.response) {
+                    result += log(`HTTP状态码: ${error.response.status}`, 'error');
+                    result += log(`响应数据: ${JSON.stringify(error.response.data, null, 2)}`, 'error');
+                } else if (error.request) {
+                    result += log(`请求对象: ${error.request}`, 'error');
+                    result += log(`请求状态: ${error.request.readyState}`, 'error');
+                } else {
+                    result += log(`配置错误: ${error.message}`, 'error');
+                }
+            }
+
+            updateResult('api-result', result, true);
+        }
+
+        // 参数变化测试
+        async function testWithDifferentParams() {
+            let result = log('开始参数变化测试...', 'info');
+            updateResult('api-result', result, true);
+
+            const testConfigs = [
+                { name: '高精度短途', include_short_medium_only: true, spatial_resolution: 0.001, min_orders_per_location: 3 },
+                { name: '中等精度全部', include_short_medium_only: false, spatial_resolution: 0.005, min_orders_per_location: 5 },
+                { name: '低精度高阈值', include_short_medium_only: true, spatial_resolution: 0.01, min_orders_per_location: 10 }
+            ];
+
+            for (const config of testConfigs) {
+                try {
+                    result += log(`测试配置: ${config.name}`, 'info');
+                    result += log(`参数: ${JSON.stringify(config, null, 2)}`, 'info');
+
+                    const startTime = 1378944000;
+                    const endTime = 1379548799;
+                    const url = `/api/traffic/road/order-speed-analysis?start_time=${startTime}&end_time=${endTime}`;
+                    
+                    const requestStart = Date.now();
+                    const response = await axios.post(url, config);
+                    const requestEnd = Date.now();
+
+                    result += log(`✅ ${config.name} 测试成功 (${requestEnd - requestStart}ms)`, 'success');
+                    
+                    if (response.data.success && response.data.speed_analysis) {
+                        const analysis = response.data.speed_analysis;
+                        result += log(`  结果: ${analysis.speed_data?.length || 0} 个速度点`, 'info');
+                    }
+
+                } catch (error) {
+                    result += log(`❌ ${config.name} 测试失败: ${error.message}`, 'error');
+                }
+                updateResult('api-result', result, true);
+            }
+        }
+
+        // 数据格式测试
+        async function testDataFormat() {
+            let result = log('开始数据格式测试...', 'info');
+            updateResult('data-result', result);
+
+            try {
+                const config = getConfig();
+                const startTime = 1378944000;
+                const endTime = 1379548799;
+                const url = `/api/traffic/road/order-speed-analysis?start_time=${startTime}&end_time=${endTime}`;
+                
+                const response = await axios.post(url, config);
+                
+                result += log('验证响应数据格式...', 'info');
+                
+                // 检查基本结构
+                const data = response.data;
+                if (typeof data === 'object' && data !== null) {
+                    result += log('✅ 响应是有效的JSON对象', 'success');
+                } else {
+                    result += log('❌ 响应不是有效的JSON对象', 'error');
+                }
+
+                // 检查必需字段
+                const requiredFields = ['success', 'message'];
+                for (const field of requiredFields) {
+                    if (field in data) {
+                        result += log(`✅ 包含必需字段: ${field}`, 'success');
+                    } else {
+                        result += log(`❌ 缺少必需字段: ${field}`, 'error');
+                    }
+                }
+
+                // 检查数据结构
+                if (data.speed_analysis) {
+                    result += log('✅ 包含速度分析数据', 'success');
+                    const analysis = data.speed_analysis;
+                    
+                    if (Array.isArray(analysis.speed_data)) {
+                        result += log(`✅ 速度数据是数组 (${analysis.speed_data.length} 项)`, 'success');
+                    } else {
+                        result += log('❌ 速度数据不是数组', 'error');
+                    }
+                    
+                    if (Array.isArray(analysis.heatmap_data)) {
+                        result += log(`✅ 热力图数据是数组 (${analysis.heatmap_data.length} 项)`, 'success');
+                    } else {
+                        result += log('❌ 热力图数据不是数组', 'error');
+                    }
+                }
+
+            } catch (error) {
+                result += log(`❌ 数据格式测试失败: ${error.message}`, 'error');
+            }
+
+            updateResult('data-result', result);
+        }
+
+        // 性能测试
+        async function testPerformance() {
+            let result = log('开始性能测试...', 'info');
+            updateResult('performance-result', result);
+
+            const config = getConfig();
+            const startTime = 1378944000;
+            const endTime = 1379548799;
+            const url = `/api/traffic/road/order-speed-analysis?start_time=${startTime}&end_time=${endTime}`;
+
+            const testCount = 5;
+            const times = [];
+
+            for (let i = 0; i < testCount; i++) {
+                try {
+                    result += log(`执行第 ${i + 1} 次性能测试...`, 'info');
+                    const requestStart = Date.now();
+                    const response = await axios.post(url, config);
+                    const requestEnd = Date.now();
+                    const duration = requestEnd - requestStart;
+                    times.push(duration);
+                    result += log(`第 ${i + 1} 次: ${duration}ms`, 'info');
+                } catch (error) {
+                    result += log(`第 ${i + 1} 次测试失败: ${error.message}`, 'error');
+                }
+                updateResult('performance-result', result);
+            }
+
+            if (times.length > 0) {
+                const avgTime = times.reduce((a, b) => a + b, 0) / times.length;
+                const minTime = Math.min(...times);
+                const maxTime = Math.max(...times);
+                
+                result += log(`📊 性能统计:`, 'info');
+                result += log(`  平均响应时间: ${avgTime.toFixed(2)}ms`, 'info');
+                result += log(`  最快响应时间: ${minTime}ms`, 'info');
+                result += log(`  最慢响应时间: ${maxTime}ms`, 'info');
+                
+                if (avgTime < 5000) {
+                    result += log(`✅ 性能良好 (平均 < 5秒)`, 'success');
+                } else if (avgTime < 10000) {
+                    result += log(`⚠️ 性能一般 (平均 5-10秒)`, 'warning');
+                } else {
+                    result += log(`❌ 性能较差 (平均 > 10秒)`, 'error');
+                }
+            }
+
+            updateResult('performance-result', result);
+        }
+
+        // 运行完整测试
+        async function runFullTest() {
+            const result = log('🚀 开始运行完整功能测试...', 'info');
+            updateResult('full-test-result', result);
+
+            const tests = [
+                { name: '系统状态检查', func: checkSystemStatus },
+                { name: '网络连接测试', func: testNetworkConnection },
+                { name: '基础API测试', func: testBasicAPI },
+                { name: '速度分析API测试', func: testSpeedAnalysisAPI },
+                { name: '数据格式测试', func: testDataFormat },
+                { name: '性能测试', func: testPerformance }
+            ];
+
+            for (const test of tests) {
+                try {
+                    updateResult('full-test-result', log(`执行 ${test.name}...`, 'info'), true);
+                    await test.func();
+                    updateResult('full-test-result', log(`✅ ${test.name} 完成`, 'success'), true);
+                } catch (error) {
+                    updateResult('full-test-result', log(`❌ ${test.name} 失败: ${error.message}`, 'error'), true);
+                }
+            }
+
+            updateResult('full-test-result', log('🎉 完整测试结束!', 'info'), true);
+        }
+
+        // 清除结果
+        function clearResults() {
+            const resultElements = document.querySelectorAll('.result-box');
+            resultElements.forEach(element => {
+                element.style.display = 'none';
+                element.innerHTML = '';
+            });
+        }
+
+        // 页面加载时自动检查系统状态
+        window.onload = function() {
+            setTimeout(checkSystemStatus, 1000);
+        };
+    </script>
+</body>
+</html> 

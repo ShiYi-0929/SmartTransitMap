@@ -80,7 +80,7 @@
           </div>
         </div>
         
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <!-- 开始时间 -->
           <div>
             <label class="block text-gray-300 text-sm mb-2">开始时间</label>
@@ -102,17 +102,6 @@
               :min="minDate"
               :max="maxDate"
               class="w-full px-3 py-2 bg-gray-800/50 border border-gray-600 rounded-lg text-white focus:border-blue-400 focus:outline-none"
-            />
-          </div>
-          
-          <!-- 车辆ID -->
-          <div>
-            <label class="block text-gray-300 text-sm mb-2">车辆ID（可选）</label>
-            <input 
-              type="text" 
-              v-model="queryParams.vehicleId"
-              placeholder="输入车辆ID"
-              class="w-full px-3 py-2 bg-gray-800/50 border border-gray-600 rounded-lg text-white focus:border-blue-400 focus:outline-none placeholder-gray-500"
             />
           </div>
           
@@ -198,7 +187,7 @@
       </div>
 
       <!-- 功能区域 -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
         <!-- 交通地图可视化区域 -->
         <div class="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
           <div class="flex items-center justify-between mb-4">
@@ -206,8 +195,7 @@
             <div class="flex items-center space-x-2">
               <button 
                 @click="queryParams.viewType = 'distribution'"
-                :class="queryParams.viewType === 'distribution' ? 'bg-blue-500 text-white' : 'bg-blue-500/20 text-blue-400'"
-                class="px-3 py-1 rounded-lg text-sm transition-all duration-200"
+                :class="queryParams.viewType === 'distribution' ? 'bg-blue-500 text-white' : 'bg-blue-500/20 text-blue-400 transition-all duration-200'"
               >
                 分布视图
               </button>
@@ -253,6 +241,25 @@
               </div>
             </div>
           </div>
+          <!-- 速度颜色图例 -->
+          <div class="mt-4 flex justify-center space-x-4">
+            <div class="flex items-center">
+              <div class="w-4 h-4 rounded-full bg-red-500 mr-2"></div>
+              <span class="text-gray-300 text-sm">高速 (>60 km/h)</span>
+            </div>
+            <div class="flex items-center">
+              <div class="w-4 h-4 rounded-full bg-orange-500 mr-2"></div>
+              <span class="text-gray-300 text-sm">中速 (30-60 km/h)</span>
+            </div>
+            <div class="flex items-center">
+              <div class="w-4 h-4 rounded-full bg-green-500 mr-2"></div>
+              <span class="text-gray-300 text-sm">低速 (10-30 km/h)</span>
+            </div>
+            <div class="flex items-center">
+              <div class="w-4 h-4 rounded-full bg-gray-500 mr-2"></div>
+              <span class="text-gray-300 text-sm">静止 (<10 km/h)</span>
+            </div>
+          </div>
         </div>
 
         <!-- 实时数据统计面板 -->
@@ -280,6 +287,10 @@
               <span class="text-gray-300">时间跨度</span>
               <span class="text-white font-semibold">{{ timeSpan }}</span>
             </div>
+            <div class="w-full bg-gray-700 rounded-full h-2">
+              <div class="bg-gradient-to-r from-orange-500 to-yellow-500 h-2 rounded-full transition-all duration-500" 
+                   :style="`width: ${Math.min((timeSpanHours / 168) * 100, 100)}%`"></div>
+            </div>
             
             <!-- 活跃车辆数 -->
             <div class="flex justify-between items-center">
@@ -306,11 +317,19 @@
               <span class="text-gray-300">总里程</span>
               <span class="text-white font-semibold">{{ totalDistance.toLocaleString() }} km</span>
             </div>
+            <div class="w-full bg-gray-700 rounded-full h-2">
+              <div class="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all duration-500" 
+                   :style="`width: ${Math.min((totalDistance / 10000) * 100, 100)}%`"></div>
+            </div>
             
             <!-- 覆盖区域 -->
             <div class="flex justify-between items-center">
               <span class="text-gray-300">覆盖区域</span>
               <span class="text-white font-semibold">{{ coverageArea }}</span>
+            </div>
+            <div class="w-full bg-gray-700 rounded-full h-2">
+              <div class="bg-gradient-to-r from-cyan-500 to-blue-500 h-2 rounded-full transition-all duration-500" 
+                   :style="`width: ${coverageArea === '济南市区' ? 100 : 0}%`"></div>
             </div>
           </div>
           
@@ -320,119 +339,75 @@
               <span class="text-gray-300 text-sm">数据质量评分</span>
               <span class="text-green-400 font-semibold">{{ dataQualityScore }}%</span>
             </div>
-            <div class="w-full bg-gray-700 rounded-full h-1">
+            <div class="w-full h-1">
               <div class="bg-gradient-to-r from-green-500 to-emerald-400 h-1 rounded-full transition-all duration-500" 
                    :style="`width: ${dataQualityScore}%`"></div>
             </div>
           </div>
         </div>
+      </div>
 
-        <!-- 功能模块导航 -->
-        <div class="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
-          <h2 class="text-xl font-semibold text-white mb-4">🚀 交通分析模块</h2>
-          <div class="grid grid-cols-2 gap-3">
-            <button @click="navigateToModule('track')" class="p-3 bg-blue-500/20 hover:bg-blue-500/30 rounded-lg text-blue-400 transition-all duration-200">
-              <div class="flex flex-col items-center">
-                <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-1.447-.894L15 4m0 13V4m-6 3l6-3"/>
-                </svg>
-                <span class="text-xs">轨迹查询</span>
-              </div>
-            </button>
-            <button @click="navigateToModule('heatmap')" class="p-3 bg-purple-500/20 hover:bg-purple-500/30 rounded-lg text-purple-400 transition-all duration-200">
-              <div class="flex flex-col items-center">
-                <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
-                </svg>
-                <span class="text-xs">热力图分析</span>
-              </div>
-            </button>
-
-            <button @click="navigateToModule('anomaly')" class="p-3 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-red-400 transition-all duration-200">
-              <div class="flex flex-col items-center">
-                <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 15.5c-.77.833.192 2.5 1.732 2.5z"/>
-                </svg>
-                <span class="text-xs">异常检测</span>
-              </div>
-            </button>
-            <button @click="navigateToModule('statistics')" class="p-3 bg-green-500/20 hover:bg-green-500/30 rounded-lg text-green-400 transition-all duration-200">
-              <div class="flex flex-col items-center">
-                <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-                </svg>
-                <span class="text-xs">统计分析</span>
-              </div>
-            </button>
-            <button @click="navigateToModule('spatiotemporal')" class="p-3 bg-indigo-500/20 hover:bg-indigo-500/30 rounded-lg text-indigo-400 transition-all duration-200">
-              <div class="flex flex-col items-center">
-                <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                </svg>
-                <span class="text-xs">时空动态</span>
-              </div>
-            </button>
-            <button @click="navigateToModule('road')" class="p-3 bg-yellow-500/20 hover:bg-yellow-500/30 rounded-lg text-yellow-400 transition-all duration-200">
-              <div class="flex flex-col items-center">
-                <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-1.447-.894L15 4m0 13V4m-6 3l6-3"/>
-                </svg>
-                <span class="text-xs">路段分析</span>
-              </div>
-            </button>
-            <button @click="navigateToModule('pattern')" class="p-3 bg-pink-500/20 hover:bg-pink-500/30 rounded-lg text-pink-400 transition-all duration-200">
-              <div class="flex flex-col items-center">
-                <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
-                </svg>
-                <span class="text-xs">模式识别</span>
-              </div>
-            </button>
-            <button @click="showAllModules" class="p-3 bg-cyan-500/20 hover:bg-cyan-500/30 rounded-lg text-cyan-400 transition-all duration-200">
-              <div class="flex flex-col items-center">
-                <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
-                </svg>
-                <span class="text-xs">所有模块</span>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        <!-- 最近活动 -->
-        <div class="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
-          <h2 class="text-xl font-semibold text-white mb-4">🕒 最近活动</h2>
-          <div class="space-y-3">
-            <div class="flex items-center space-x-3">
-              <div class="w-2 h-2 bg-green-400 rounded-full"></div>
-              <div class="flex-1">
-                <p class="text-gray-300 text-sm">数据同步完成</p>
-                <p class="text-gray-500 text-xs">2分钟前</p>
-              </div>
+      <!-- 功能模块导航 -->
+      <div class="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
+        <h2 class="text-xl font-semibold text-white mb-4">🚀 交通分析模块</h2>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <button @click="navigateToModule('track')" class="p-3 bg-blue-500/20 hover:bg-blue-500/30 rounded-lg text-blue-400 transition-all duration-200">
+            <div class="flex flex-col items-center">
+              <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-1.447-.894L15 4m0 13V4m-6 3l6-3"/>
+              </svg>
+              <span class="text-xs">轨迹查询</span>
             </div>
-            <div class="flex items-center space-x-3">
-              <div class="w-2 h-2 bg-blue-400 rounded-full"></div>
-              <div class="flex-1">
-                <p class="text-gray-300 text-sm">新增 1,234 条轨迹记录</p>
-                <p class="text-gray-500 text-xs">15分钟前</p>
-              </div>
+          </button>
+          <button @click="navigateToModule('heatmap')" class="p-3 bg-purple-500/20 hover:bg-purple-500/30 rounded-lg text-purple-400 transition-all duration-200">
+            <div class="flex flex-col items-center">
+              <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+              </svg>
+              <span class="text-xs">热力图分析</span>
             </div>
-            <div class="flex items-center space-x-3">
-              <div class="w-2 h-2 bg-orange-400 rounded-full"></div>
-              <div class="flex-1">
-                <p class="text-gray-300 text-sm">检测到异常车辆行为</p>
-                <p class="text-gray-500 text-xs">1小时前</p>
-              </div>
+          </button>
+          <button @click="navigateToModule('anomaly')" class="p-3 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-red-400 transition-all duration-200">
+            <div class="flex flex-col items-center">
+              <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 15.5c-.77.833.192 2.5 1.732 2.5z"/>
+              </svg>
+              <span class="text-xs">异常检测</span>
             </div>
-            <div class="flex items-center space-x-3">
-              <div class="w-2 h-2 bg-purple-400 rounded-full"></div>
-              <div class="flex-1">
-                <p class="text-gray-300 text-sm">定时报告生成</p>
-                <p class="text-gray-500 text-xs">3小时前</p>
-              </div>
+          </button>
+          <button @click="navigateToModule('statistics')" class="p-3 bg-green-500/20 hover:bg-green-500/30 rounded-lg text-green-400 transition-all duration-200">
+            <div class="flex flex-col items-center">
+              <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+              </svg>
+              <span class="text-xs">统计分析</span>
             </div>
-          </div>
+          </button>
+          <button @click="navigateToModule('spatiotemporal')" class="p-3 bg-indigo-500/20 hover:bg-indigo-500/30 rounded-lg text-indigo-400 transition-all duration-200">
+            <div class="flex flex-col items-center">
+              <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <span class="text-xs">时空动态</span>
+            </div>
+          </button>
+          <button @click="navigateToModule('road')" class="p-3 bg-yellow-500/20 hover:bg-yellow-500/30 rounded-lg text-yellow-400 transition-all duration-200">
+            <div class="flex flex-col items-center">
+              <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-1.447-.894L15 4m0 13V4m-6 3l6-3"/>
+              </svg>
+              <span class="text-xs">路段分析</span>
+            </div>
+          </button>
+          <button @click="showAllModules" class="p-3 bg-cyan-500/20 hover:bg-cyan-500/30 rounded-lg text-cyan-400 transition-all duration-200">
+            <div class="flex flex-col items-center">
+              <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+              </svg>
+              <span class="text-xs">所有模块</span>
+            </div>
+          </button>
         </div>
       </div>
 
@@ -464,13 +439,12 @@ const trafficData = ref([])
 const dataSummary = ref({})
 const filesInfo = ref([])
 const queryParams = ref({
-  startTime: "2013-09-11T16:00",  // 根据真实数据调整
-  endTime: "2013-09-11T20:00",   // 根据真实数据调整
-  vehicleId: '',
+  startTime: "2013-09-11T16:00",
+  endTime: "2013-09-11T20:00",
   viewType: 'distribution',
   mapStyle: 'normal',
-  maxPoints: 1000,  // 默认显示1000个点
-  performanceMode: 'balanced'  // 默认平衡模式
+  maxPoints: 1000,
+  performanceMode: 'balanced'
 })
 
 // 错误处理
@@ -503,6 +477,13 @@ const timeSpan = computed(() => {
   return `${hours} 小时`
 })
 
+const timeSpanHours = computed(() => {
+  if (!queryParams.value.startTime || !queryParams.value.endTime) return 0
+  const start = new Date(queryParams.value.startTime)
+  const end = new Date(queryParams.value.endTime)
+  return (end - start) / (1000 * 60 * 60)
+})
+
 const coverageArea = computed(() => {
   return trafficData.value.length > 0 ? '济南市区' : '-'
 })
@@ -517,28 +498,13 @@ const activeVehicles = computed(() => {
 
 const averageSpeed = computed(() => {
   if (trafficData.value.length > 0) {
-    // 调试：查看前几个数据点的速度信息
-    console.log('🚗 计算平均速度，前3个数据点:', trafficData.value.slice(0, 3).map(item => ({
-      speed: item.speed,
-      vehicle_id: item.vehicle_id,
-      keys: Object.keys(item)
-    })))
-    
     const validSpeeds = trafficData.value
       .map(item => item.speed)
       .filter(speed => speed !== null && speed !== undefined && !isNaN(speed))
     
-    console.log('🚗 有效速度数据:', {
-      total: trafficData.value.length,
-      validSpeeds: validSpeeds.length,
-      sampleSpeeds: validSpeeds.slice(0, 10)
-    })
-    
     if (validSpeeds.length > 0) {
       const totalSpeed = validSpeeds.reduce((sum, speed) => sum + speed, 0)
-      const avgSpeed = Math.round(totalSpeed / validSpeeds.length)
-      console.log('🚗 平均速度计算结果:', avgSpeed)
-      return avgSpeed
+      return Math.round(totalSpeed / validSpeeds.length)
     }
   }
   return dataSummary.value.avg_speed_kmh || 0
@@ -546,9 +512,9 @@ const averageSpeed = computed(() => {
 
 const totalDistance = computed(() => {
   if (trafficData.value.length > 0) {
-    return Math.round(trafficData.value.length * 0.1) // 模拟计算，每条记录约0.1km
+    return Math.round(trafficData.value.length * 0.1)
   }
-  return Math.round((dataSummary.value.total_records || 0) * 0.05) // 根据总记录数估算
+  return Math.round((dataSummary.value.total_records || 0) * 0.05)
 })
 
 const lastUpdate = computed(() => {
@@ -557,39 +523,47 @@ const lastUpdate = computed(() => {
 
 const dataQualityScore = computed(() => {
   if (trafficData.value.length === 0) return 0
-  // 简单的数据质量评分算法
-  const validRecords = trafficData.value.filter(item => 
-    item.lng && item.lat && item.lng > 0 && item.lat > 0
+  let score = 100
+  const missingCoords = trafficData.value.filter(item => 
+    !item.lng || !item.lat || item.lng <= 0 || item.lat <= 0
   ).length
-  return Math.round((validRecords / trafficData.value.length) * 100)
+  score -= (missingCoords / trafficData.value.length) * 30
+  const invalidSpeeds = trafficData.value.filter(item => 
+    item.speed === null || item.speed === undefined || isNaN(item.speed) || item.speed < 0
+  ).length
+  score -= (invalidSpeeds / trafficData.value.length) * 30
+  const invalidTimestamps = trafficData.value.filter(item => 
+    !item.timestamp || isNaN(new Date(item.timestamp).getTime())
+  ).length
+  score -= (invalidTimestamps / trafficData.value.length) * 20
+  const missingVehicleIds = trafficData.value.filter(item => 
+    !item.vehicleId && !item.vehicle_id
+  ).length
+  score -= (missingVehicleIds / trafficData.value.length) * 20
+  return Math.max(0, Math.round(score))
 })
 
-// 设置日期选择器的最小和最大值 - 根据真实数据调整
-const minDate = "2013-09-11T00:00"  // 真实数据从9月11日开始
+// 设置日期选择器的最小和最大值
+const minDate = "2013-09-11T00:00"
 const maxDate = "2013-09-18T23:59"
 
 // 查询相关函数
 const submitQuery = async () => {
-  // 清除之前的错误
   errorMessage.value = ''
   showError.value = false
   
-  // 检查必填字段
   if (!queryParams.value.startTime || !queryParams.value.endTime) {
     errorMessage.value = '请选择查询时间范围'
     showError.value = true
     return
   }
   
-  // 转换为UTC时间戳
   const startTimeUTC = convertToUTC(queryParams.value.startTime)
   const endTimeUTC = convertToUTC(queryParams.value.endTime)
   
-  // 定义数据集的有效时间范围 - 根据真实数据调整
-  const minValidTime = 1378857600  // 2013-09-11 00:00:00 UTC
-  const maxValidTime = 1379548799  // 2013-09-18 23:59:59 UTC
+  const minValidTime = 1378857600
+  const maxValidTime = 1379548799
   
-  // 验证时间范围
   if (startTimeUTC < minValidTime || startTimeUTC > maxValidTime || 
       endTimeUTC < minValidTime || endTimeUTC > maxValidTime) {
     errorMessage.value = '查询时间超出数据集范围（2013年9月11日至9月18日）'
@@ -597,20 +571,18 @@ const submitQuery = async () => {
     return
   }
   
-  // 时间范围有效，继续查询
   loading.value = true
   try {
     const response = await getTrafficVisualization(
       startTimeUTC,
       endTimeUTC,
       queryParams.value.viewType,
-      queryParams.value.vehicleId || null,
+      null, // 移除 vehicleId 参数
       queryParams.value.mapStyle
     )
     
     if (response.data.success) {
       trafficData.value = response.data.data
-      // 更新地图显示 - 使用nextTick确保DOM更新完成
       nextTick(() => {
         setTimeout(() => {
           updateMap()
@@ -630,9 +602,8 @@ const submitQuery = async () => {
 }
 
 const resetQuery = () => {
-  queryParams.value.startTime = "2013-09-11T16:00"  // 根据真实数据调整
-  queryParams.value.endTime = "2013-09-11T20:00"    // 根据真实数据调整
-  queryParams.value.vehicleId = ""
+  queryParams.value.startTime = "2013-09-11T16:00"
+  queryParams.value.endTime = "2013-09-11T20:00"
   queryParams.value.viewType = 'distribution'
   queryParams.value.mapStyle = 'normal'
   queryParams.value.maxPoints = 1000
@@ -642,7 +613,6 @@ const resetQuery = () => {
   showError.value = false
   trafficData.value = []
   
-  // 清除地图并重置风格
   if (map) {
     try {
       if (markers.value.length > 0) {
@@ -656,19 +626,17 @@ const resetQuery = () => {
   }
 }
 
-// 时间转换函数
 const convertToUTC = (dateString) => {
   if (!dateString) return 0
   try {
     const date = new Date(dateString)
-    return Math.floor(date.getTime() / 1000) // 转换为秒级时间戳
+    return Math.floor(date.getTime() / 1000)
   } catch (error) {
     console.error('时间转换错误:', error)
     return 0
   }
 }
 
-// 导航功能
 const navigateToModule = (module) => {
   console.log(`导航到模块: ${module}`)
   router.push(`/traffic/${module}`)
@@ -676,12 +644,8 @@ const navigateToModule = (module) => {
 
 const showAllModules = () => {
   console.log('显示所有模块')
-  // 可以导航到一个显示所有模块的页面，或者保持在当前页面
 }
 
-
-
-// 地图相关功能
 const initMap = () => {
   console.log('🗺️ 开始初始化地图...')
   console.log('🌍 AMap 可用性:', !!window.AMap)
@@ -697,7 +661,7 @@ const initMap = () => {
     try {
       map = new window.AMap.Map('traffic-map', {
         zoom: 13,
-        center: [117.000923, 36.675807], // 济南市中心坐标
+        center: [117.000923, 36.675807],
         mapStyle: getMapStyleUrl()
       })
       
@@ -708,9 +672,6 @@ const initMap = () => {
           zoom: map.getZoom(),
           size: map.getSize()
         })
-        
-        // 暂时禁用测试标记以避免冲突
-        console.log('🧪 跳过测试标记添加')
       })
       
       map.on('click', (e) => {
@@ -726,7 +687,6 @@ const initMap = () => {
   }
 }
 
-// 更新地图显示
 const updateMap = () => {
   if (!map || !trafficData.value?.length) {
     console.log('⚠️ 跳过地图更新:', { hasMap: !!map, dataLength: trafficData.value?.length || 0 })
@@ -734,13 +694,11 @@ const updateMap = () => {
   }
   
   try {
-    // 清除之前的标记
     if (markers.value.length > 0) {
       map.remove(markers.value)
     }
     markers.value = []
     
-    // 根据视图类型更新地图
     if (queryParams.value.viewType === 'distribution') {
       renderDistributionView()
     }
@@ -749,7 +707,6 @@ const updateMap = () => {
   }
 }
 
-// 获取地图样式URL
 const getMapStyleUrl = () => {
   return mapStyleOptions[queryParams.value.mapStyle] || mapStyleOptions.normal
 }
@@ -770,25 +727,20 @@ const renderDistributionView = () => {
   console.log('✅ 开始渲染分布视图，数据点数量:', trafficData.value.length)
   console.log('📊 前3个数据点示例:', trafficData.value.slice(0, 3))
   
-  // 使用局部变量避免响应式问题
   const newMarkers = []
   let validPoints = 0
   let invalidPoints = 0
   
-  // 智能采样：根据用户设置的点数量限制进行采样
   let dataToProcess = trafficData.value
   const maxPoints = parseInt(queryParams.value.maxPoints) || 1000
   
   if (dataToProcess.length > maxPoints) {
     console.log(`📊 数据点过多(${dataToProcess.length}个)，采样到${maxPoints}个点`)
     
-    // 根据性能模式选择采样策略
     if (queryParams.value.performanceMode === 'performance') {
-      // 性能优先：简单均匀采样
       const step = Math.floor(dataToProcess.length / maxPoints)
       dataToProcess = dataToProcess.filter((_, index) => index % step === 0).slice(0, maxPoints)
     } else if (queryParams.value.performanceMode === 'quality') {
-      // 质量优先：保留高速和异常点
       const highSpeedPoints = dataToProcess.filter(p => (p.speed || 0) > 50)
       const normalPoints = dataToProcess.filter(p => (p.speed || 0) <= 50)
       
@@ -800,7 +752,6 @@ const renderDistributionView = () => {
       
       dataToProcess = [...highSpeedPoints.slice(0, highSpeedCount), ...sampledNormal]
     } else {
-      // 平衡模式：均匀采样
       const step = Math.floor(dataToProcess.length / maxPoints)
       dataToProcess = dataToProcess.filter((_, index) => index % step === 0).slice(0, maxPoints)
     }
@@ -815,25 +766,22 @@ const renderDistributionView = () => {
     const vehicleId = point.vehicle_id || point.vehicleId || 'unknown'
     const speed = point.speed || 0
     
-    // 调试前3个点和每100个点
     if (i < 3 || i % 100 === 0) {
       console.log(`📍 第${i+1}个点:`, { lng, lat, vehicleId, speed })
     }
     
     if (lng && lat && typeof lng === 'number' && typeof lat === 'number') {
-      // 验证坐标范围（济南市）
       if (lat >= 36.0 && lat <= 37.0 && lng >= 116.0 && lng <= 118.0) {
         try {
-          // 根据速度设置不同颜色
-          let color = '#00cfff' // 默认蓝色
+          let color = '#00cfff'
           if (speed > 60) {
-            color = '#ff4444' // 高速红色
+            color = '#ff4444'
           } else if (speed > 30) {
-            color = '#ffaa00' // 中速橙色
+            color = '#ffaa00'
           } else if (speed > 10) {
-            color = '#00ff00' // 低速绿色
+            color = '#00ff00'
           } else {
-            color = '#888888' // 静止灰色
+            color = '#888888'
           }
           
           const marker = new window.AMap.Marker({
@@ -876,21 +824,17 @@ const renderDistributionView = () => {
       map.add(newMarkers)
       console.log('✅ 标记已添加到地图')
       
-      // 更新响应式数组
       markers.value = newMarkers
       
-      // 调整视图
       if (newMarkers.length > 1) {
         map.setFitView(newMarkers)
         console.log('🔍 地图视图已调整')
       } else {
-        // 单个标记时手动设置中心
         const pos = newMarkers[0].getPosition()
         map.setCenter([pos.lng, pos.lat])
         console.log('🎯 地图中心已设置到标记位置')
       }
       
-      // 检查地图上的覆盖物
       setTimeout(() => {
         const overlays = map.getAllOverlays()
         console.log('🗺️ 地图上的覆盖物数量:', overlays.length)
@@ -925,7 +869,6 @@ const renderTrajectoryView = () => {
     
     map.add(polyline)
     
-    // 添加起点和终点标记
     const startMarker = new window.AMap.Marker({
       position: path[0],
       title: '起点',
@@ -959,7 +902,6 @@ const renderTrajectoryView = () => {
     map.add([startMarker, endMarker])
   })
   
-  // 调整视图
   map.setFitView()
 }
 
@@ -985,7 +927,6 @@ const renderHeatmapView = () => {
   })
 }
 
-// 地图控制
 const zoomIn = () => {
   if (map) map.zoomIn()
 }
@@ -1001,7 +942,6 @@ const resetMap = () => {
   }
 }
 
-// 地图风格切换
 const changeMapStyle = () => {
   if (map) {
     const newStyle = getMapStyleUrl()
@@ -1010,7 +950,6 @@ const changeMapStyle = () => {
   }
 }
 
-// 初始化数据概要信息
 const loadDataSummary = async () => {
   try {
     const response = await getTrafficSummary()
@@ -1025,7 +964,6 @@ const loadDataSummary = async () => {
   }
 }
 
-// 加载文件信息
 const loadFilesInfo = async () => {
   try {
     const response = await getDataFilesInfo()
@@ -1041,18 +979,14 @@ const loadFilesInfo = async () => {
 onMounted(async () => {
   console.log('📊 交通数据总览页面已加载')
   
-  // 加载数据概要信息
   await loadDataSummary()
   await loadFilesInfo()
   
-  // 设置默认值为数据集范围内的时间（根据真实数据调整）
   queryParams.value.startTime = "2013-09-11T16:00"
   queryParams.value.endTime = "2013-09-11T20:00"
   
-  // 初始化地图
   initMap()
   
-  // 加载高德地图API
   if (!window.AMap) {
     const script = document.createElement('script')
     script.src = 'https://webapi.amap.com/maps?v=2.0&key=ac9b745946df9aee02cf0515319407df&plugin=AMap.HeatMap'
@@ -1081,4 +1015,4 @@ onMounted(async () => {
   color: #721c24;
   border: 1px solid #f5c6cb;
 }
-</style> 
+</style>
