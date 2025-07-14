@@ -12,4 +12,13 @@ export function verifyFace(userId, file) {
   formData.append('user_id', userId)
   formData.append('file', file)
   return axios.post('/face/verify', formData)
+}
+
+export function rejectFace(personId) {
+  return axios.post(`/face/reject/${personId}`);
+}
+
+// 新增：用户确认后清理自己的人脸数据
+export function cleanupFaceData() {
+  return axios.post('/face/cleanup');
 } 
