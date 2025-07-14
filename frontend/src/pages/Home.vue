@@ -8,6 +8,7 @@
           <button
             class="styled-button"
             @click="$router.push('/user-management')"
+            :disabled="isInteractionLocked"
           >
             <font-awesome-icon icon="user-cog" class="icon" />
             用户管理
@@ -15,23 +16,29 @@
           <span v-if="pendingCount > 0 && isAdmin" class="badge">{{ pendingCount }}</span>
         </div>
 
-        <!-- 用户认证按钮 - 对非管理员用户可见 -->
-        <button v-if="!isAdmin" class="styled-button" @click="handleAuthClick">
-          <font-awesome-icon icon="user-shield" class="icon" />
-          <span>用户认证</span>
-        </button>
+        <!-- 用户认证按钮 - 对非管理员、或被降级的用户可见 -->
+        <el-badge v-if="!isAdmin" :is-dot="showAuthBadge" class="home-badge">
+          <button class="styled-button" @click="handleAuthClick">
+            <font-awesome-icon icon="user-shield" class="icon" />
+            <span>用户认证</span>
+          </button>
+        </el-badge>
         
         <!-- 人脸数据管理按钮 - 仅对管理员可见 -->
-        <button v-if="isAdmin" class="styled-button" @click="$router.push('/face')">
-          <font-awesome-icon icon="database" class="icon" />
-          <span>人脸数据管理</span>
-        </button>
+        <div class="button-wrapper" v-if="isAdmin">
+          <button class="styled-button" @click="$router.push('/face')" :disabled="isInteractionLocked">
+            <font-awesome-icon icon="database" class="icon" />
+            <span>人脸数据管理</span>
+          </button>
+          <span v-if="pendingFacesCount > 0" class="badge">{{ pendingFacesCount }}</span>
+        </div>
 
         <!-- 路面检测按钮 - 非普通用户可见 -->
         <button
           v-if="!isNormalUser"
           class="styled-button"
           @click="handleNavigation('/road')"
+          :disabled="isInteractionLocked"
         >
           <font-awesome-icon icon="road" />
           <span>路面检测</span>
@@ -42,6 +49,7 @@
           v-if="!isNormalUser"
           class="styled-button"
           @click="handleNavigation('/traffic')"
+          :disabled="isInteractionLocked"
         >
           <font-awesome-icon icon="chart-bar" />
           <span>交通数据</span>
@@ -52,6 +60,7 @@
           v-if="!isNormalUser"
           class="styled-button"
           @click="handleNavigation('/log')"
+          :disabled="isInteractionLocked"
         >
           <font-awesome-icon icon="list" />
           <span>日志记录</span>
@@ -69,7 +78,7 @@
 
 <script setup>
 import { useMainStore } from "@/store";
-import { ElNotification } from "element-plus";
+import { ElNotification, ElMessageBox } from "element-plus"; // 引入 ElMessageBox
 import { computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 // 引入背景图片
@@ -79,19 +88,37 @@ import bg6 from '@/assets/bg6.png';
 const store = useMainStore();
 const router = useRouter();
 
-const pendingCount = computed(() => store.pendingApplicationsCount);
+// --- 权限和状态计算 ---
 const userRole = computed(() => localStorage.getItem('user-class')?.trim() || '普通用户');
-
 const isAdmin = computed(() => userRole.value === '管理员');
 const isAuthenticatedUser = computed(() => userRole.value === '认证用户');
 const isNormalUser = computed(() => userRole.value === '普通用户');
 
-const themeClass = computed(() => {
-  if (isAdmin.value) return 'admin-theme';
-  return 'user-theme'; // 认证和普通用户用蓝色系
+// 新增：判断是否需要锁定交互
+const isInteractionLocked = computed(() => {
+  // 锁定条件1：用户被降级
+  if (store.isDemoted) return true;
+  // 锁定条件2：普通用户认证已批准，等待重新登录
+  if (isNormalUser.value && store.faceAuthNotificationStatus === 'approved') return true;
+  return false;
 });
 
-// 动态背景样式
+// "用户认证"按钮上的小红点
+const showAuthBadge = computed(() => {
+  if (store.isDemoted) return true; // 被降级时显示
+  const status = store.faceAuthNotificationStatus;
+  return status === 'approved' || status === 'rejected'; // 认证结果出来时显示
+});
+
+const pendingCount = computed(() => store.pendingApplicationsCount);
+const pendingFacesCount = computed(() => store.pendingFacesCount);
+
+// --- 视图和样式 ---
+const themeClass = computed(() => {
+  if (isAdmin.value) return 'admin-theme';
+  return 'user-theme';
+});
+
 const backgroundStyle = computed(() => {
   const imageUrl = isAdmin.value ? bg6 : bg5;
   return {
@@ -102,24 +129,46 @@ const backgroundStyle = computed(() => {
 onMounted(() => {
   if (isAdmin.value) {
     store.fetchPendingApplicationsCount();
+    store.fetchPendingFacesCount();
+  }
+  
+  if (window.history.state.notification) {
+    const { title, message, type } = window.history.state.notification;
+    ElNotification({ title, message, type, duration: 7000 });
+    window.history.replaceState({ ...window.history.state, notification: null }, '');
   }
 });
 
+// --- 事件处理 ---
 const handleAuthClick = () => {
-  if (isAuthenticatedUser.value || isAdmin.value) {
+  // 场景1：处理被降级的情况
+  if (store.isDemoted) {
+    ElMessageBox.alert('您的人脸数据已被管理员移除，用户等级已降级。请重新登录后进行操作。', '权限变更通知', {
+      confirmButtonText: '重新登录',
+      type: 'warning',
+      showClose: false,
+      callback: () => {
+        store.logout();
+      },
+    });
+    return; // 终止后续操作
+  }
+  
+  // 场景2：已认证用户（非降级状态）点击，提示无需重复认证
+  if (isAuthenticatedUser.value) {
     ElNotification({
       title: "提示",
-      message: "您已是认证用户或管理员，无需重复认证！",
+      message: "您已是认证用户，无需重复认证！",
       type: "info",
     });
-  } else {
-    router.push("/face");
+    return;
   }
+  
+  // 场景3：普通用户点击，跳转到认证页面 (此处的交互由路由守卫处理)
+  router.push("/face");
 };
 
 const handleNavigation = (path) => {
-  // 由于普通用户看不到受限按钮，此处的权限检查逻辑可以简化或移除
-  // 但为保险起见，暂时保留
   if (isNormalUser.value && ['/road', '/traffic', '/log'].includes(path)) {
     ElNotification({
       title: '权限不足',
@@ -132,11 +181,7 @@ const handleNavigation = (path) => {
 };
 
 const logout = () => {
-  localStorage.removeItem("token");
-  localStorage.removeItem("user-class");
-  store.setUser(null);
-  store.setPendingApplicationsCount(0);
-  router.push("/");
+  store.logout(); // 直接调用 store 的 action
   ElNotification({
     title: '已退出',
     message: '您已成功退出登录。',
@@ -223,7 +268,13 @@ const logout = () => {
   transition: all 0.3s ease;
 }
 
-/* 移除 .restricted 相关的样式，因为按钮已通过 v-if 隐藏 */
+.styled-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  background-color: #f0f0f0;
+  color: #999;
+  transform: none; /* 禁用时移除悬浮效果 */
+}
 
 .styled-button .icon,
 .styled-button .fa-icon,
@@ -233,59 +284,68 @@ const logout = () => {
   margin-bottom: 15px;
 }
 
-.styled-button:hover {
+.styled-button:not(:disabled):hover {
   transform: translateY(-5px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-  border-color: #007bff; /* 默认蓝色悬浮边框 */
+  box-shadow: 0 6px 20px rgba(0, 123, 255, 0.2);
 }
 
-/* Badge styling */
+.logout-btn {
+  color: #dc3545; /* 红色 */
+}
+
+.logout-btn:not(:disabled):hover {
+  background-color: #dc3545;
+  color: white;
+  box-shadow: 0 6px 20px rgba(220, 53, 69, 0.3);
+}
+
 .badge {
   position: absolute;
-  top: -10px;
-  right: -10px;
+  top: 10px;
+  right: 10px;
   background-color: #dc3545;
   color: white;
   border-radius: 50%;
-  padding: 5px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   font-size: 14px;
   font-weight: bold;
   border: 2px solid white;
-  min-width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  box-sizing: border-box;
 }
 
-/* Logout button specific styling */
-.logout-btn {
-  color: #dc3545; /* 登出按钮保持红色 */
+/* --- THEME OVERRIDES --- */
+
+/* User Theme */
+.user-theme .title {
+  color: #0056b3;
 }
-
-.logout-btn:hover {
-  border-color: #dc3545;
-}
-
-/* --- 主题样式 --- */
-
-/* 管理员红色主题 */
-.admin-theme .styled-button:not(.logout-btn) {
-  color: #c72c41; /* 主要红色 */
-}
-
-.admin-theme .styled-button:not(.logout-btn):hover {
-  border-color: #c72c41;
-}
-
-.admin-theme .badge {
-  background-color: #007bff; /* 管理员界面的角标可以换成蓝色，以示区别 */
-}
-
-/* 用户蓝色主题 (基本是默认样式，但可以保留以备将来扩展) */
 .user-theme .styled-button {
-  /* 默认已经是蓝色系，无需额外规则 */
+  color: #007bff;
+}
+
+/* Admin Theme */
+.admin-theme .title {
+  color: #8b0000;
+}
+.admin-theme .styled-button {
+  color: #8b0000;
+}
+.admin-theme .styled-button:not(:disabled):hover {
+  background-color: #8b0000;
+  color: white;
+  box-shadow: 0 6px 20px rgba(139, 0, 0, 0.3);
+}
+
+.home-badge {
+  width: 100%;
+  height: 100%;
+}
+
+.home-badge .styled-button {
+  width: 100%;
+  height: 100%;
 }
 </style>

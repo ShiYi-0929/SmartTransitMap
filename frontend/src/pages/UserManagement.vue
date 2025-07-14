@@ -59,7 +59,7 @@ import bg5 from "@/assets/bg5.png"; // Import the background image
 import { getUserProfile, updateUserProfile } from "@/api/user";
 import { applyForAdmin } from "@/api/admin";
 import { useMainStore } from "@/store";
-import { mapState } from "pinia"; // Import mapState
+// mapState不再需要
 import { ElMessage } from "element-plus";
 
 export default {
@@ -83,10 +83,10 @@ export default {
     };
   },
   computed: {
-    // Map the store's state to computed properties
-    ...mapState(useMainStore, {
-      pendingCount: "pendingApplicationsCount",
-    }),
+    pendingCount() {
+      // 直接从 store 实例获取状态
+      return useMainStore().pendingApplicationsCount;
+    },
     isAdmin() {
       return localStorage.getItem("user-class")?.trim() === "管理员";
     },
