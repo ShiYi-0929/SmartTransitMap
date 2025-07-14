@@ -7,7 +7,7 @@
         :background-color="themeColors.backgroundColor"
         :text-color="themeColors.textColor"
         :active-text-color="themeColors.activeTextColor"
-        style="height: 100%; border-right: none;"
+        style="height: 100%; border-right: none"
         @select="handleSelect"
       >
         <el-menu-item index="/home">首页</el-menu-item>
@@ -15,11 +15,9 @@
         <!-- 用户管理对所有登录用户可见 -->
         <el-menu-item index="/user-management">用户管理</el-menu-item>
 
-        <!-- 用户认证对非认证/非管理员用户可见 -->
-        <el-menu-item v-if="isNormalUser" index="/face">
-          用户认证(人脸识别)
-        </el-menu-item>
-        
+        <!-- 用户认证对非管理员用户可见 -->
+        <el-menu-item v-if="!isAdmin" index="/face"> 用户认证 </el-menu-item>
+
         <!-- 人脸数据管理，仅管理员可见 -->
         <el-menu-item v-if="isAdmin" index="/face">人脸数据管理</el-menu-item>
 
@@ -35,7 +33,7 @@
       <el-main :style="mainStyle">
         <router-view />
       </el-main>
-      <el-footer style="height: auto;">
+      <el-footer style="height: auto">
         <AuthFooter />
       </el-footer>
     </el-container>
@@ -62,13 +60,13 @@
 </template>
 
 <script setup>
-import bg6 from '@/assets/bg6.png'; // 引入 bg6 图片
-import AuthFooter from '@/components/AuthFooter.vue';
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
-import { useMainStore } from '@/store';
-import { getUserStatus } from '@/api/user'; // 引入获取状态的API
-import { cleanupFaceData } from '@/api/face'; // 引入清理API
+import bg6 from "@/assets/bg6.png"; // 引入 bg6 图片
+import AuthFooter from "@/components/AuthFooter.vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import { useMainStore } from "@/store";
+import { getUserStatus } from "@/api/user"; // 引入获取状态的API
+import { cleanupFaceData } from "@/api/face"; // 引入清理API
 
 const router = useRouter();
 const route = useRoute();
@@ -77,9 +75,9 @@ const store = useMainStore();
 // --- 认证状态轮询 ---
 const statusModal = ref({
   visible: false,
-  title: '',
-  content: '',
-  buttonText: '确认',
+  title: "",
+  content: "",
+  buttonText: "确认",
   action: null, // 'logout' or 'close'
 });
 let pollInterval = null;
@@ -95,38 +93,43 @@ const pollStatus = async () => {
     console.log("轮询API响应:", response);
 
     const { face_registration_status, user_class: remoteUserClass } = response;
-    const localUserClass = localStorage.getItem('user-class')?.trim();
+    const localUserClass = localStorage.getItem("user-class")?.trim();
 
     // 场景1：检测到用户被降级
     // 条件：本地记录是认证用户，但远程已经是普通用户
-    if (localUserClass === '认证用户' && remoteUserClass === '普通用户') {
+    if (localUserClass === "认证用户" && remoteUserClass === "普通用户") {
       console.log("检测到用户降级！触发降级流程。");
       store.setDemotionStatus(true);
       stopPolling(); // 停止轮询
       store.setPollingState(false);
       return; // 优先处理降级，不再继续下面的逻辑
     }
-    
+
     // 场景2：普通用户等待认证结果
-    if (face_registration_status === 'approved' || face_registration_status === 'rejected') {
+    if (
+      face_registration_status === "approved" ||
+      face_registration_status === "rejected"
+    ) {
       // 检测到最终状态，更新通知状态并停止轮询
-      console.log(`检测到最终状态: '${face_registration_status}'，更新通知状态并停止轮询。`);
+      console.log(
+        `检测到最终状态: '${face_registration_status}'，更新通知状态并停止轮询。`
+      );
       store.setFaceAuthNotificationStatus(face_registration_status);
       stopPolling();
       store.setPollingState(false);
     }
   } catch (error) {
-    console.error('轮询用户状态失败:', error);
+    console.error("轮询用户状态失败:", error);
   }
 };
 
 // 新增：专门用于检测认证用户是否被降级的函数
 const checkDemotionStatus = async () => {
   console.log("正在轮询用户降级状态...");
-  const localUserClass = localStorage.getItem('user-class')?.trim();
-  
+  const localUserClass = localStorage.getItem("user-class")?.trim();
+
   // 如果本地不是认证用户了，或者没有token，就停止轮询
-  if (localUserClass !== '认证用户' || !localStorage.getItem('token')) {
+  if (localUserClass !== "认证用户" || !localStorage.getItem("token")) {
     if (demotionCheckInterval) {
       clearInterval(demotionCheckInterval);
       demotionCheckInterval = null;
@@ -137,7 +140,7 @@ const checkDemotionStatus = async () => {
 
   try {
     const response = await getUserStatus();
-    if (response.user_class === '普通用户') {
+    if (response.user_class === "普通用户") {
       console.log("检测到用户降级！触发降级流程。");
       store.setDemotionStatus(true);
       if (demotionCheckInterval) {
@@ -146,7 +149,7 @@ const checkDemotionStatus = async () => {
       }
     }
   } catch (error) {
-    console.error('轮询用户降级状态失败:', error);
+    console.error("轮询用户降级状态失败:", error);
     // 出错时停止，避免无限循环错误请求
     if (demotionCheckInterval) {
       clearInterval(demotionCheckInterval);
@@ -155,13 +158,12 @@ const checkDemotionStatus = async () => {
   }
 };
 
-
 const handleModalConfirm = async () => {
   // 此函数现在仅用于批准后的登出确认，保留以防万一，但主要逻辑已移至路由守卫
   const action = statusModal.value.action;
   statusModal.value.visible = false;
 
-  if (action === 'logout') {
+  if (action === "logout") {
     store.logout();
   }
 };
@@ -178,12 +180,12 @@ const stopPolling = () => {
 // 启动轮询的函数
 const startPolling = () => {
   if (pollInterval) return; // 防止重复启动
-  
-  const token = localStorage.getItem('token');
-  const userClass = localStorage.getItem('user-class')?.trim();
+
+  const token = localStorage.getItem("token");
+  const userClass = localStorage.getItem("user-class")?.trim();
 
   // 双重检查，确保只在需要时轮询
-  if (token && userClass === '普通用户' && store.isPollingActive) {
+  if (token && userClass === "普通用户" && store.isPollingActive) {
     console.log("启动认证状态轮询...");
     pollStatus(); // 立即执行一次
     pollInterval = setInterval(pollStatus, 10000); // 每10秒轮询一次
@@ -205,8 +207,8 @@ watch(
 
 onMounted(() => {
   // 启动降级状态轮询
-  const currentUserClass = localStorage.getItem('user-class')?.trim();
-  if (currentUserClass === '认证用户') {
+  const currentUserClass = localStorage.getItem("user-class")?.trim();
+  if (currentUserClass === "认证用户") {
     startDemotionCheck();
   }
 });
@@ -230,64 +232,62 @@ const startDemotionCheck = () => {
 // --- 布局和路由管理 ---
 const showSidebar = computed(() => {
   // 在登录页 (路径为 '/') 不显示侧边栏
-  return route.path !== '/';
+  return route.path !== "/";
 });
 
 // 为特定管理员页面应用特殊背景
 const mainStyle = computed(() => {
-  const isAdmin = userRole.value === '管理员';
-  const adminRoutes = ['/user-management', '/approval'];
+  const isAdmin = userRole.value === "管理员";
+  const adminRoutes = ["/user-management", "/approval"];
   if (isAdmin && adminRoutes.includes(route.path)) {
     return {
       backgroundImage: `url(${bg6})`,
-      backgroundSize: 'cover',
-      backgroundPosition: 'center center',
+      backgroundSize: "cover",
+      backgroundPosition: "center center",
     };
   }
   return {};
 });
-
 
 // --- 角色和主题管理 ---
 const userRole = computed(() => {
   // 通过引用 route.path，我们确保了在每次路由变化时，
   // 这个计算属性都会重新评估，从而读取最新的 localStorage 值。
   // eslint-disable-next-line no-unused-vars
-  const _ = route.path; 
-  return localStorage.getItem('user-class')?.trim() || '普通用户';
+  const _ = route.path;
+  return localStorage.getItem("user-class")?.trim() || "普通用户";
 });
 
 // 监听用户角色变化，动态启停降级轮询
 watch(userRole, (newRole, oldRole) => {
-  if (newRole === '认证用户' && oldRole !== '认证用户') {
+  if (newRole === "认证用户" && oldRole !== "认证用户") {
     startDemotionCheck();
-  } else if (newRole !== '认证用户' && demotionCheckInterval) {
+  } else if (newRole !== "认证用户" && demotionCheckInterval) {
     clearInterval(demotionCheckInterval);
     demotionCheckInterval = null;
     console.log("用户不再是认证用户，停止降级轮询。");
   }
 });
 
-const isAdmin = computed(() => userRole.value === '管理员');
-const isNormalUser = computed(() => userRole.value === '普通用户');
+const isAdmin = computed(() => userRole.value === "管理员");
+const isNormalUser = computed(() => userRole.value === "普通用户");
 
-const themeClass = computed(() => (isAdmin.value ? 'admin-theme' : 'user-theme'));
+const themeClass = computed(() => (isAdmin.value ? "admin-theme" : "user-theme"));
 
 const themeColors = computed(() => {
   if (isAdmin.value) {
     return {
-      backgroundColor: '#4a0e0e', // 深红色背景
-      textColor: '#ffffff',
-      activeTextColor: '#f5c518' // 金色高亮
+      backgroundColor: "#4a0e0e", // 深红色背景
+      textColor: "#ffffff",
+      activeTextColor: "#f5c518", // 金色高亮
     };
   }
   return {
-    backgroundColor: '#001f3f', // 默认深蓝色背景
-    textColor: '#ffffff',
-    activeTextColor: '#ffd04b'
+    backgroundColor: "#001f3f", // 默认深蓝色背景
+    textColor: "#ffffff",
+    activeTextColor: "#ffd04b",
   };
 });
-
 
 // --- 导航逻辑 ---
 const handleSelect = (index) => {
@@ -311,4 +311,4 @@ const handleSelect = (index) => {
 .el-aside.admin-theme .el-menu-item:hover {
   background-color: #631212 !important; /* 深红色悬浮背景 */
 }
-</style> 
+</style>
