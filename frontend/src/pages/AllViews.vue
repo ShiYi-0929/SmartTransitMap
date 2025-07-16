@@ -477,7 +477,7 @@
 </template>
 
 <script>
-import { ElNotification } from "element-plus";
+import { ElNotification, ElMessageBox } from "element-plus";
 import AuthNavbar from "@/components/AuthNavbar.vue";
 import AuthForm from "@/components/AuthForm.vue";
 import AuthFooter from "@/components/AuthFooter.vue";
@@ -970,11 +970,16 @@ export default {
           this.captchaInput // This is the verification code
         );
 
-        ElNotification({
-          title: "成功",
-          message: `${response.message}！现在可以用新账号登录了。`,
-          type: "success",
-        });
+        // 使用 ElMessageBox.alert 替代 ElNotification，以醒目地提示用户其ID
+        await ElMessageBox.alert(
+          `您的账户已成功创建！您的登录ID是：<strong>${response.userID}</strong>。请妥善保管此ID，它将用于登录。`,
+          "注册成功",
+          {
+            confirmButtonText: "好的，去登录",
+            type: "success",
+            dangerouslyUseHTMLString: true, // 允许在消息中使用HTML
+          }
+        );
 
         // Reset state and navigate to login
         this.resetRegistrationState();
