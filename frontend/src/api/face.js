@@ -1,34 +1,24 @@
-import request from '../utils/request'
+import axios from '@/utils/request'
 
-// 人脸识别 - 注册
-export function registerFace(data) {
-  return request({
-    url: '/face/register',
-    method: 'post',
-    data
-  })
+export function registerFace(userId, file) {
+  const formData = new FormData()
+  formData.append('user_id', userId)
+  formData.append('file', file)
+  return axios.post('/face/register', formData)
 }
 
-// 人脸识别 - 验证
-export function verifyFace(data) {
-  return request({
-    url: '/face/verify',
-    method: 'post',
-    data
-  })
+export function verifyFace(userId, file) {
+  const formData = new FormData()
+  formData.append('user_id', userId)
+  formData.append('file', file)
+  return axios.post('/face/verify', formData)
 }
 
 export function rejectFace(personId) {
-  return request({
-    url: `/face/reject/${personId}`,
-    method: 'post'
-  });
+  return axios.post(`/face/reject/${personId}`);
 }
 
 // 新增：用户确认后清理自己的人脸数据
 export function cleanupFaceData() {
-  return request({
-    url: '/face/cleanup',
-    method: 'post'
-  });
+  return axios.post('/face/cleanup');
 } 

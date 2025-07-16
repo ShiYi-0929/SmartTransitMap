@@ -1,225 +1,115 @@
 <template>
-  <el-card class="log-container">
-    <el-tabs v-model="activeTab">
-      <el-tab-pane label="系统操作日志" name="system">
-        <div class="header">
-          <h3>系统操作日志</h3>
-          <div class="header-right">
-            <el-input
-              v-model="searchQuery"
-              placeholder="按用户/ID/类型搜索"
-              clearable
-              class="search-input"
-            />
-            <el-button 
-              v-if="isAdmin"
-              type="danger" 
-              @click="handleBulkDelete" 
-              :disabled="multipleSelection.length === 0"
-            >
-              批量删除
-            </el-button>
-            <el-button @click="() => loadSystemLogs()" :loading="loading">刷新</el-button>
-          </div>
+  <el-card class="main-card">
+    <template v-if="currentView === 'monitor'">
+      <el-list>
+        <el-list-item v-for="(log, idx) in logs" :key="idx">{{ log }}</el-list-item>
+      </el-list>
+
+      <div class="monitor-cards-container">
+        <div class="monitor-section">
+          <h3>人脸识别监控概览</h3>
+          <FaceRecognitionMonitor />
         </div>
-        <el-table :data="systemLogs" stripe style="width: 100%" @selection-change="handleSelectionChange">
-          <el-table-column type="selection" width="55" v-if="isAdmin" />
-          <el-table-column prop="timestamp" label="时间" width="180"></el-table-column>
-          <el-table-column prop="username" label="操作用户" width="120"></el-table-column>
-          <el-table-column prop="userID" label="用户ID" width="100"></el-table-column>
-          <el-table-column prop="logtype" label="日志类型" width="180"></el-table-column>
-          <el-table-column prop="description" label="描述"></el-table-column>
-          <el-table-column v-if="isAdmin" label="媒体证据" width="120">
-            <template #default="scope">
-              <img v-if="scope.row.screenshot_url" :src="scope.row.screenshot_url" class="thumb" @click="previewMedia(scope.row.screenshot_url, 'image')"/>
-              <el-icon v-if="scope.row.video_url" @click="previewMedia(scope.row.video_url, 'video')" class="media-icon"><VideoCamera /></el-icon>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="160" v-if="isAdmin">
-            <template #default="scope">
-              <el-button size="small" @click="openEdit(scope.row)">编辑</el-button>
-              <el-button type="danger" size="small" @click="handleDelete(scope.row.id)" style="margin-left:6px;">删除</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </el-tab-pane>
-      <el-tab-pane label="日志告警" name="alert">
-        <p>此功能待开发...</p>
-      </el-tab-pane>
-    </el-tabs>
 
-    <!-- 媒体预览对话框 -->
-    <el-dialog v-model="dialogVisible" :title="previewType === 'image' ? '截图预览' : '录屏回放'" width="60%">
-      <img v-if="previewType === 'image'" :src="mediaUrl" style="width: 100%;" />
-      <video v-if="previewType === 'video'" :src="mediaUrl" controls autoplay style="width: 100%;"></video>
-    </el-dialog>
+        <div class="monitor-section">
+          <h3>路面监测监控概览</h3>
+          <RoadDamageDetectionMonitor @view-detailed-logs="setCurrentView('roadLogList')" />
+        </div>
+      </div>
+    </template>
 
-    <!-- 编辑描述对话框 -->
-    <el-dialog v-model="editDialogVisible" title="编辑日志描述" width="30%">
-      <el-input type="textarea" v-model="editDescription" rows="4" placeholder="请输入描述" />
-      <template #footer>
-        <el-button @click="editDialogVisible=false">取消</el-button>
-        <el-button type="primary" @click="submitEdit">保存</el-button>
-      </template>
-    </el-dialog>
+    <template v-else-if="currentView === 'roadLogList'">
+      <RoadLogList @close-road-log-list="setCurrentView('monitor')" />
+    </template>
   </el-card>
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue';
-import { getLogs, deleteLog, updateLog } from '../api/log';
-import { ElMessage, ElMessageBox } from 'element-plus';
-import { Picture, VideoCamera } from '@element-plus/icons-vue';
+import { ref } from 'vue';
+import { getLogs } from '../api/log'; // 确保路径正确
 
-const activeTab = ref('system');
-const systemLogs = ref([]);
-const loading = ref(false);
-const dialogVisible = ref(false);
-const mediaUrl = ref('');
-const previewType = ref('image');
-const multipleSelection = ref([]); // 新增：用于存储多选的行
-const searchQuery = ref(''); // 新增：搜索查询
-let debounceTimer = null; // 新增：防抖计时器
+import FaceRecognitionMonitor from '../modules/Log/FaceLog/FaceRecognitionMonitor.vue';
+import RoadDamageDetectionMonitor from '../modules/Log/RoadLog/RoadDamageDetectionMonitor.vue';
+import RoadLogList from '../modules/Log/RoadLog/RoadLogList.vue'; // Correct path to RoadLogList
 
-const userRole = computed(() => localStorage.getItem('user-class')?.trim() || '');
-const isAdmin = computed(() => userRole.value === '管理员');
+const logs = ref([]);
+const currentView = ref('monitor'); // 'monitor' for the default view, 'roadLogList' for the detailed list
 
-async function loadSystemLogs(query = '') {
-  loading.value = true;
+function setCurrentView(view) {
+  currentView.value = view;
+}
+
+async function loadLogs() {
   try {
-    const data = await getLogs(query);
-    // 后端返回的数据直接就是列表
-    systemLogs.value = data;
+    const res = await getLogs();
+    logs.value = res.data.logs;
   } catch (error) {
-    ElMessage.error('加载系统日志失败');
-    console.error(error);
-  } finally {
-    loading.value = false;
+    console.error('Failed to load logs:', error);
   }
 }
 
-// 侦听搜索框的变化
-watch(searchQuery, (newQuery) => {
-  clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(() => {
-    loadSystemLogs(newQuery);
-  }, 300); // 300毫秒防抖
-});
-
-
-function previewMedia(url, type) {
-  mediaUrl.value = url;
-  previewType.value = type;
-  dialogVisible.value = true;
-}
-
-async function handleDelete(logId) {
-  try {
-    await ElMessageBox.confirm('此操作将永久删除该日志及其关联的媒体文件，是否继续？', '警告', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning',
-    });
-    
-    await deleteLog(logId);
-    ElMessage.success('日志删除成功');
-    // 重新加载日志
-    loadSystemLogs();
-
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('删除失败');
-      console.error(error);
-    }
-  }
-}
-
-// --- 新增：批量删除相关 ---
-function handleSelectionChange(val) {
-  multipleSelection.value = val;
-}
-
-async function handleBulkDelete() {
-  if (multipleSelection.value.length === 0) {
-    ElMessage.warning('请至少选择一条日志进行删除');
-    return;
-  }
-
-  try {
-    await ElMessageBox.confirm(
-      `确定要删除选中的 ${multipleSelection.value.length} 条日志吗？此操作不可恢复。`,
-      '警告',
-      {
-        confirmButtonText: '确定删除',
-        cancelButtonText: '取消',
-        type: 'warning',
-      }
-    );
-
-    const deletePromises = multipleSelection.value.map(log => deleteLog(log.id));
-    await Promise.all(deletePromises);
-    
-    ElMessage.success('批量删除成功');
-    loadSystemLogs(); // 重新加载数据
-
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('批量删除时发生错误');
-      console.error(error);
-    }
-  }
-}
-
-const editDialogVisible = ref(false);
-const editDescription = ref('');
-const editingId = ref(null);
-
-function openEdit(row){
-  editingId.value = row.id;
-  editDescription.value = row.description || '';
-  editDialogVisible.value = true;
-}
-async function submitEdit(){
-  try{
-     await updateLog(editingId.value, editDescription.value);
-     ElMessage.success('更新成功');
-     editDialogVisible.value=false;
-     loadSystemLogs(searchQuery.value); // 保持当前搜索
-  }catch(e){
-     ElMessage.error('更新失败');
-  }
-}
-
-onMounted(() => {
-  loadSystemLogs();
-});
+loadLogs();
 </script>
 
 <style scoped>
-.log-container {
-  margin: 20px;
+/* 调整最外层el-card的宽度和内边距，减少整体留白 */
+.main-card {
+  width: fit-content; /* 让卡片宽度刚好适应内容，从而减少多余的横向留白 */
+  height: fit-content;
+  min-height: 2000px;
+  max-height: 2000px;
+  min-width: 2000px; /* 最小宽度确保两张卡片和间距能够排开 */
+  max-width: 2000px; /* 限制最大宽度，防止在超宽屏幕上拉伸过大 */
+  margin: 10px auto; /* 居中显示，并提供少量上下外边距 */
+  padding: 10px; /* 适当的内边距 */
+  box-sizing: border-box; /* 确保内边距和边框不会增加总宽度 */
+  background-color: #052146;
 }
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
+
+/* 新增的 Flex 容器样式 */
+.monitor-cards-container {
+  display: flex; /* 启用 Flexbox */
+  justify-content: center; /* 使内部两个卡片整体居中 */
+  align-items: flex-start; /* 使所有项目顶部对齐 */
+  gap: 120px; /* **增加两个子组件卡片之间的间距，从20px调整为30px** */
+  margin-top: 30px; /* 给整个监控区域留出一些顶部间距 */
+  flex-wrap: wrap; /* 允许项目换行，以防屏幕宽度不足时溢出 */
+  /* padding: 0 20px; /* **可选：增加横向内边距，将卡片从容器边缘稍微推开** */
 }
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+
+.monitor-section {
+  flex: 0 0 auto; /* 阻止flex项目伸缩，让其保持内容宽度 */
+  width: 700px; /* 固定每个监控组件的宽度，与截图中的卡片宽度保持一致 */
+  /* 调整上边距，减少与上方标题的距离 */
+  margin-top: 0;
+  padding-top: 0; /* 移除内边距，因为子组件自身有padding */
+  border-top: none; /* 移除分隔线，如果不需要 */
 }
-.search-input {
-  width: 250px;
+
+.monitor-section h3 {
+  margin-bottom: 15px; /* 调整标题与下方组件的间距 */
+  color: #367c9d;
+  text-align: center; /* 标题居中 */
 }
-.media-icon {
-  font-size: 20px;
-  cursor: pointer;
-  margin-right: 10px;
+
+/* 针对el-list的样式，使其看起来更像日志列表 */
+.el-list {
+  background-color: #406ba2;
+  border-radius: 4px;
+  padding: 10px;
+  margin-top: 15px;
+  max-height: 500px; /* 限制日志列表的高度，出现滚动条 */
+  overflow-y: auto;
+  border: 1px solid #455d90;
 }
-.media-icon:hover {
-  color: #409EFF;
+
+.el-list-item {
+  padding: 8px 0;
+  border-bottom: 1px dashed #8fa3d2;
+  font-size: 14px;
+  color: #040b19;
 }
-.thumb{width:60px;height:40px;object-fit:cover;cursor:pointer;margin-right:6px;}
-</style> 
+.el-list-item:last-child {
+  border-bottom: none;
+}
+</style>
