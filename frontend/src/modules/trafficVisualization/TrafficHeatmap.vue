@@ -217,21 +217,7 @@
         </div>
         
         <!-- 时间分布图表 -->
-        <div>
-          <h4 class="text-sm font-semibold text-blue-200 mb-3">时间分布</h4>
-          <div class="h-32 bg-gray-700 rounded p-2">
-            <!-- 简单的时间分布条形图 -->
-            <div class="flex items-end justify-between h-full">
-              <div 
-                v-for="(bar, index) in timeDistributionBars" 
-                :key="index"
-                :style="{ height: bar.height + '%' }"
-                class="bg-cyan-500 w-1 rounded-t"
-                :title="bar.label"
-              ></div>
-            </div>
-          </div>
-        </div>
+        <!-- 删除时间分布相关内容 -->
       </div>
     </div>
 
@@ -378,21 +364,6 @@ const topHotspots = computed(() => {
     }))
 })
 
-const timeDistributionBars = computed(() => {
-  const slices = timeSlices.value
-  if (!slices || slices.length === 0) {
-    return []
-  }
-  
-  const counts = slices.map(slice => (slice.data || []).length)
-  const maxCount = Math.max(...counts, 1) // 避免除以0
-  
-  return slices.map((slice, index) => ({
-    height: ((slice.data || []).length / maxCount) * 100,
-    label: slice.label
-  }))
-})
-
 // 地图初始化
 async function initMap() {
   if (!window.AMap) {
@@ -421,7 +392,7 @@ function loadAMapAPI() {
     
     const script = document.createElement('script')
     script.src = 'https://webapi.amap.com/maps?v=2.0&key=ac9b745946df9aee02cf0515319407df&callback=initAMap'
-    
+
     window.initAMap = () => {
       resolve()
       delete window.initAMap

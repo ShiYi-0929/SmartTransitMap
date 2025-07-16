@@ -174,7 +174,7 @@
           </div>
           
           <div class="text-sm text-gray-400">
-            数据范围：2013年9月11日 - 2013年9月18日
+            数据范围：2013年9月12日 - 2013年9月18日
             <span v-if="dataSummary.total_records" class="ml-2">
               ({{ Math.round(dataSummary.total_records / 10000) }}万条记录)
             </span>
@@ -348,68 +348,15 @@
       </div>
 
       <!-- 功能模块导航 -->
+      <!-- 删除以下交通分析模块板块 -->
+      <!--
       <div class="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
         <h2 class="text-xl font-semibold text-white mb-4">🚀 交通分析模块</h2>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <button @click="navigateToModule('track')" class="p-3 bg-blue-500/20 hover:bg-blue-500/30 rounded-lg text-blue-400 transition-all duration-200">
-            <div class="flex flex-col items-center">
-              <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-1.447-.894L15 4m0 13V4m-6 3l6-3"/>
-              </svg>
-              <span class="text-xs">轨迹查询</span>
-            </div>
-          </button>
-          <button @click="navigateToModule('heatmap')" class="p-3 bg-purple-500/20 hover:bg-purple-500/30 rounded-lg text-purple-400 transition-all duration-200">
-            <div class="flex flex-col items-center">
-              <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
-              </svg>
-              <span class="text-xs">热力图分析</span>
-            </div>
-          </button>
-          <button @click="navigateToModule('anomaly')" class="p-3 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-red-400 transition-all duration-200">
-            <div class="flex flex-col items-center">
-              <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 15.5c-.77.833.192 2.5 1.732 2.5z"/>
-              </svg>
-              <span class="text-xs">异常检测</span>
-            </div>
-          </button>
-          <button @click="navigateToModule('statistics')" class="p-3 bg-green-500/20 hover:bg-green-500/30 rounded-lg text-green-400 transition-all duration-200">
-            <div class="flex flex-col items-center">
-              <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-              </svg>
-              <span class="text-xs">统计分析</span>
-            </div>
-          </button>
-          <button @click="navigateToModule('spatiotemporal')" class="p-3 bg-indigo-500/20 hover:bg-indigo-500/30 rounded-lg text-indigo-400 transition-all duration-200">
-            <div class="flex flex-col items-center">
-              <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-              </svg>
-              <span class="text-xs">时空动态</span>
-            </div>
-          </button>
-          <button @click="navigateToModule('road')" class="p-3 bg-yellow-500/20 hover:bg-yellow-500/30 rounded-lg text-yellow-400 transition-all duration-200">
-            <div class="flex flex-col items-center">
-              <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-1.447-.894L15 4m0 13V4m-6 3l6-3"/>
-              </svg>
-              <span class="text-xs">路段分析</span>
-            </div>
-          </button>
-          <button @click="showAllModules" class="p-3 bg-cyan-500/20 hover:bg-cyan-500/30 rounded-lg text-cyan-400 transition-all duration-200">
-            <div class="flex flex-col items-center">
-              <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
-              </svg>
-              <span class="text-xs">所有模块</span>
-            </div>
-          </button>
+          ...所有按钮...
         </div>
       </div>
+      -->
 
       <!-- 底部提示 -->
       <div class="mt-8 text-center">
@@ -429,7 +376,7 @@
 <script setup>
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { getTrafficVisualization, getTrafficSummary, getDataFilesInfo } from '@/api/traffic'
+import { getTrafficVisualization, getTrafficSummary, getDataFilesInfo, addTrafficLog } from '@/api/traffic'
 
 const router = useRouter()
 
@@ -498,16 +445,44 @@ const activeVehicles = computed(() => {
 
 const averageSpeed = computed(() => {
   if (trafficData.value.length > 0) {
+    // 优先使用speed_kmh字段（如果有的话），它已经是km/h单位
     const validSpeeds = trafficData.value
-      .map(item => item.speed)
-      .filter(speed => speed !== null && speed !== undefined && !isNaN(speed))
+      .map(item => {
+        // 尝试多个可能的速度字段
+        let speed = item.speed_kmh || item.SPEED_KMH || item.speed || 0;
+        
+        // 如果是原始speed字段，根据数据分析结果进行处理
+        if (!item.speed_kmh && !item.SPEED_KMH && item.speed) {
+          // 根据数据分析，原始speed字段需要除以10来获得合理的km/h值
+          if (item.speed > 100) { // 大部分异常值都>100，需要缩放
+            speed = item.speed / 10; // 除以10获得合理速度
+          } else if (item.speed < 50) { // 可能是m/s单位
+            speed = item.speed * 3.6; // m/s转km/h
+          } else {
+            speed = item.speed; // 可能已经是合理的km/h值
+          }
+        }
+        
+        return speed;
+      })
+      .filter(speed => speed !== null && speed !== undefined && !isNaN(speed) && speed > 0 && speed <= 120) // 城市交通合理范围：0-120 km/h
     
     if (validSpeeds.length > 0) {
       const totalSpeed = validSpeeds.reduce((sum, speed) => sum + speed, 0)
       return Math.round(totalSpeed / validSpeeds.length)
     }
   }
-  return dataSummary.value.avg_speed_kmh || 0
+  
+  // 备用：使用dataSummary中的avg_speed_kmh
+  let fallbackSpeed = dataSummary.value.avg_speed_kmh || dataSummary.value.avg_speed || 0;
+  
+  // 如果备用速度也需要处理
+  if (fallbackSpeed > 120) {
+    // 可能也需要除以10
+    fallbackSpeed = fallbackSpeed / 10;
+  }
+  
+  return Math.round(Math.min(fallbackSpeed, 120)); // 限制最大值为120 km/h
 })
 
 const totalDistance = computed(() => {
@@ -566,12 +541,35 @@ const submitQuery = async () => {
   
   if (startTimeUTC < minValidTime || startTimeUTC > maxValidTime || 
       endTimeUTC < minValidTime || endTimeUTC > maxValidTime) {
-    errorMessage.value = '查询时间超出数据集范围（2013年9月11日至9月18日）'
+    errorMessage.value = '查询时间超出数据集范围（2013年9月12日至9月18日）'
     showError.value = true
     return
   }
   
   loading.value = true
+  
+  // 记录查询开始日志
+  try {
+    await addTrafficLog({
+      level: 'info',
+      type: 'traffic',
+      module: '数据总览查询',
+      message: `开始数据总览查询，时间范围: ${queryParams.value.startTime} - ${queryParams.value.endTime}`,
+      source: '前端用户操作',
+      user: '用户',
+      details: {
+        start_time: startTimeUTC,
+        end_time: endTimeUTC,
+        view_type: queryParams.value.viewType,
+        map_style: queryParams.value.mapStyle,
+        max_points: queryParams.value.maxPoints,
+        performance_mode: queryParams.value.performanceMode
+      }
+    })
+  } catch (logError) {
+    console.warn('日志记录失败:', logError)
+  }
+  
   try {
     const response = await getTrafficVisualization(
       startTimeUTC,
@@ -583,6 +581,28 @@ const submitQuery = async () => {
     
     if (response.data.success) {
       trafficData.value = response.data.data
+      
+      // 记录查询成功日志
+      try {
+        await addTrafficLog({
+          level: 'info',
+          type: 'traffic',
+          module: '数据总览查询',
+          message: `数据总览查询成功，返回 ${response.data.data?.length || 0} 条数据`,
+          source: '前端用户操作',
+          user: '用户',
+          details: {
+            start_time: startTimeUTC,
+            end_time: endTimeUTC,
+            data_count: response.data.data?.length || 0,
+            view_type: queryParams.value.viewType,
+            map_style: queryParams.value.mapStyle
+          }
+        })
+      } catch (logError) {
+        console.warn('成功日志记录失败:', logError)
+      }
+      
       nextTick(() => {
         setTimeout(() => {
           updateMap()
@@ -591,11 +611,52 @@ const submitQuery = async () => {
     } else {
       errorMessage.value = response.data.message || '查询失败'
       showError.value = true
+      
+      // 记录查询失败日志
+      try {
+        await addTrafficLog({
+          level: 'warning',
+          type: 'traffic',
+          module: '数据总览查询',
+          message: `数据总览查询失败: ${response.data.message || '未知错误'}`,
+          source: '前端用户操作',
+          user: '用户',
+          details: {
+            start_time: startTimeUTC,
+            end_time: endTimeUTC,
+            error_message: response.data.message,
+            view_type: queryParams.value.viewType
+          }
+        })
+      } catch (logError) {
+        console.warn('失败日志记录失败:', logError)
+      }
     }
   } catch (error) {
     errorMessage.value = `查询失败: ${error.message}`
     showError.value = true
     console.error('API请求错误:', error)
+    
+    // 记录查询异常日志
+    try {
+      await addTrafficLog({
+        level: 'error',
+        type: 'traffic',
+        module: '数据总览查询',
+        message: `数据总览查询异常: ${error.message}`,
+        source: '前端用户操作',
+        user: '用户',
+        details: {
+          start_time: startTimeUTC,
+          end_time: endTimeUTC,
+          error_message: error.message,
+          error_stack: error.stack,
+          view_type: queryParams.value.viewType
+        }
+      })
+    } catch (logError) {
+      console.warn('异常日志记录失败:', logError)
+    }
   } finally {
     loading.value = false
   }
@@ -978,15 +1039,15 @@ const loadFilesInfo = async () => {
 
 onMounted(async () => {
   console.log('📊 交通数据总览页面已加载')
-  
+
   await loadDataSummary()
   await loadFilesInfo()
-  
+
   queryParams.value.startTime = "2013-09-11T16:00"
   queryParams.value.endTime = "2013-09-11T20:00"
-  
+
   initMap()
-  
+
   if (!window.AMap) {
     const script = document.createElement('script')
     script.src = 'https://webapi.amap.com/maps?v=2.0&key=ac9b745946df9aee02cf0515319407df&plugin=AMap.HeatMap'

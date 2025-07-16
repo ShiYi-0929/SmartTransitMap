@@ -32,12 +32,12 @@
         <div class="space-y-2">
           <label class="text-sm text-blue-200">车辆ID（精确查询）</label>
           <div class="flex space-x-2">
-            <input 
-              v-model="queryParams.vehicleId"
-              type="text" 
-              placeholder="输入具体车辆ID"
+          <input 
+            v-model="queryParams.vehicleId"
+            type="text" 
+            placeholder="输入具体车辆ID"
               class="input-tech placeholder:text-blue-300 flex-1"
-            />
+          />
             <button 
               @click="loadSampleVehicles"
               :disabled="loadingVehicles"
@@ -406,8 +406,8 @@ const calculateDistance = (lat1, lng1, lat2, lng2) => {
 const queryTracks = async () => {
   if (!queryParams.value.startTime || !queryParams.value.endTime) {
     alert('请选择查询时间范围')
-    return
-  }
+      return
+    }
   
   if (!queryParams.value.vehicleId) {
     alert('请输入车辆ID或选择示例车辆')

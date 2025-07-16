@@ -14,11 +14,11 @@
       <el-menu-item index="track">轨迹查询</el-menu-item>
       <el-menu-item index="heatmap">热力图分析</el-menu-item>
       <el-menu-item index="anomaly">异常检测</el-menu-item>
-      <el-menu-item index="spatiotemporal">时空动态</el-menu-item>
-      <el-menu-item index="statistics">统计分析</el-menu-item>
+      <el-menu-item index="statistics">流量分析</el-menu-item>
       <el-menu-item index="road">路段分析</el-menu-item>
-      <el-menu-item index="road-advanced">路段智能分析</el-menu-item>
-      <el-menu-item index="pattern">模式识别</el-menu-item>
+      <el-menu-item index="road-advanced">路程分析</el-menu-item>
+      <el-menu-item index="smart-passenger">载客车辆分析</el-menu-item>
+      <el-menu-item index="log">日志记录</el-menu-item>
     </el-menu>
     
     <!-- 路由视图容器 -->

@@ -90,7 +90,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { MapPin } from 'lucide-vue-next'
-import mapAPIManager from '@/utils/mapManager.js'
 
 const props = defineProps({
   data: {
@@ -171,7 +170,26 @@ const viewStyleMap = {
 // 使用全局地图API管理器
 async function loadAMapScript() {
   try {
-    return await mapAPIManager.loadAPI()
+    // 高德地图API加载逻辑
+    // 假设通过CDN引入高德地图API
+    if (typeof window.AMap === 'undefined') {
+      loadingMessage.value = '正在加载高德地图API...'
+      const script = document.createElement('script')
+      script.src = 'https://webapi.amap.com/maps?v=2.0&key=YOUR_AMAP_KEY' // 替换 YOUR_AMAP_KEY 为你的高德地图API密钥
+      script.async = true
+      script.onload = () => {
+        console.log('高德地图API加载成功')
+        loadingMessage.value = ''
+      }
+      script.onerror = (error) => {
+        console.error('高德地图API加载失败:', error)
+        loadingMessage.value = `地图API加载失败: ${error.message}`
+      }
+      document.head.appendChild(script)
+    } else {
+      console.log('高德地图API已加载')
+      loadingMessage.value = ''
+    }
   } catch (error) {
     console.error('地图API加载失败:', error)
     loadingMessage.value = `地图API加载失败: ${error.message}`
