@@ -15,7 +15,8 @@ import SpatioTemporalAnalysis from "../modules/trafficVisualization/SpatioTempor
 import TrafficStatistics from "../modules/trafficVisualization/TrafficStatistics.vue"
 import TrafficRoadSimple from "../modules/trafficVisualization/TrafficRoadSimple.vue"
 import TrafficRoadAdvanced from "../modules/trafficVisualization/TrafficRoadAdvanced.vue"
-import TrafficPattern from "../modules/trafficVisualization/TrafficPattern.vue"
+import SmartPassengerAnalysis from "../modules/trafficVisualization/SmartPassengerAnalysis.vue"
+import TrafficLog from "../modules/trafficVisualization/TrafficLog.vue"
 
 const routes = [
   { path: "/", component: AllViews },
@@ -38,7 +39,8 @@ const routes = [
       { path: "statistics", component: TrafficStatistics },
       { path: "road", component: TrafficRoadSimple },
       { path: "road-advanced", component: TrafficRoadAdvanced },
-      { path: "pattern", component: TrafficPattern }
+      { path: "smart-passenger", component: SmartPassengerAnalysis },
+      { path: "log", component: TrafficLog }
     ]
   }
 ]
