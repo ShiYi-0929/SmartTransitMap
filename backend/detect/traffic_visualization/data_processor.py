@@ -8,11 +8,13 @@ import math
 from collections import defaultdict
 from .models import HeatmapPoint, TrackPoint, VehicleTrack
 import logging
+import time
+import traceback
 
 class TrafficDataProcessor:
     """交通数据处理类，负责加载、处理和转换交通数据"""
     
-    def __init__(self, data_dir: str = None):
+    def __init__(self, data_dir: Optional[str] = None):
         """
         初始化数据处理器
         
@@ -69,7 +71,7 @@ class TrafficDataProcessor:
         # 性能优化参数
         self.max_data_points = 50000  # 单次查询最大数据点数
         self.sample_ratio = 0.2       # 数据采样比例
-        self.enable_sampling = True   # 启用智能采样
+        self.enable_sampling = True   # 禁用智能采样
     
     def _load_indexes(self):
         """加载预处理的索引数据"""
@@ -108,7 +110,7 @@ class TrafficDataProcessor:
             ]
         return self._csv_files
     
-    def load_data(self, start_time: float, end_time: float, vehicle_id: str = None) -> pd.DataFrame:
+    def load_data(self, start_time: float, end_time: float, vehicle_id: Optional[str] = None) -> pd.DataFrame:
         """
         加载指定时间范围和车辆ID的数据（性能优化版本）
         
@@ -141,6 +143,10 @@ class TrafficDataProcessor:
             print(f"🔄 数据量过大({len(result)}条)，进行智能采样...")
             result = self._smart_sample_data(result, vehicle_id)
         
+        # 加载数据后，优先用清洗后的速度
+        if 'speed_kmh' in result.columns:
+            result['SPEED'] = result['speed_kmh']
+        
         # 更新缓存（LRU策略）
         if len(self._cached_data) >= self._cache_maxsize:
             # 删除最旧的缓存
@@ -151,7 +157,7 @@ class TrafficDataProcessor:
         print(f"✅ 数据加载完成: {len(result)} 条记录")
         return result
     
-    def _smart_sample_data(self, df: pd.DataFrame, vehicle_id: str = None) -> pd.DataFrame:
+    def _smart_sample_data(self, df: pd.DataFrame, vehicle_id: Optional[str] = None) -> pd.DataFrame:
         """智能数据采样，保持数据分布特性"""
         if df.empty:
             return df
@@ -204,7 +210,7 @@ class TrafficDataProcessor:
         print(f"   采样结果: {len(result)} 条记录 ({len(df)} -> {len(result)})")
         return result
 
-    def _load_data_fast(self, start_time: float, end_time: float, vehicle_id: str = None) -> pd.DataFrame:
+    def _load_data_fast(self, start_time: float, end_time: float, vehicle_id: Optional[str] = None) -> pd.DataFrame:
         """使用预处理数据进行快速加载（优化版本）"""
         print("🚀 使用预处理数据进行极速查询...")
         
@@ -231,7 +237,7 @@ class TrafficDataProcessor:
         data_frames = []
         current_hour = start_hour
         processed_count = 0
-        max_files = 6  # 限制最大文件数
+        max_files = 24  # 允许加载24小时的数据文件
         file_count = 0
         
         while current_hour <= end_hour and file_count < max_files:
@@ -242,7 +248,10 @@ class TrafficDataProcessor:
                 if os.path.exists(filepath):
                     try:
                         # 使用列选择优化
-                        columns_to_load = ['UTC', 'COMMADDR', 'LAT', 'LON', 'SPEED']
+                        columns_to_load = [
+                            'UTC', 'COMMADDR', 'LAT', 'LON', 'SPEED',
+                            'lat', 'lon', 'speed_kmh', 'is_occupied', 'timestamp', 'hour'
+                        ]
                         df = pd.read_parquet(filepath, columns=columns_to_load)
                         
                         # 精确时间过滤
@@ -277,7 +286,7 @@ class TrafficDataProcessor:
             print("❌ 未找到匹配的数据")
             return pd.DataFrame()
 
-    def _load_data_legacy(self, start_time: float, end_time: float, vehicle_id: str = None) -> pd.DataFrame:
+    def _load_data_legacy(self, start_time: float, end_time: float, vehicle_id: Optional[str] = None) -> pd.DataFrame:
         """使用原始CSV文件进行加载（备用方法）"""
         print("使用原始CSV文件进行查询（较慢）...")
         
@@ -484,7 +493,8 @@ class TrafficDataProcessor:
         if vehicle_id:
             # 确保类型匹配，避免因类型不一致导致过滤失败
             df['COMMADDR'] = df['COMMADDR'].astype(str)
-            df = df[df['COMMADDR'] == str(vehicle_id)]
+            vehicle_id_str = str(vehicle_id) if vehicle_id else ""
+            df = df[df['COMMADDR'] == vehicle_id_str]
             if df.empty:
                 return []
         
@@ -541,7 +551,7 @@ class TrafficDataProcessor:
             
             # 创建车辆轨迹
             track = VehicleTrack(
-                vehicle_id=veh_id,
+                vehicle_id=str(veh_id),  # 确保vehicle_id是字符串类型
                 points=track_points,
                 start_time=track_points[0].timestamp if track_points else None,
                 end_time=track_points[-1].timestamp if track_points else None,
@@ -737,7 +747,7 @@ class TrafficDataProcessor:
     def _detect_speed_anomalies(self, df: pd.DataFrame, thresholds: Dict[str, Any]) -> List[Dict[str, Any]]:
         """检测速度异常"""
         anomalies = []
-        low_threshold = thresholds.get("speed_threshold_low", 5)
+        low_threshold = thresholds.get("speed_threshold_low", 10)
         high_threshold = thresholds.get("speed_threshold_high", 80)
         
         # 如果没有速度列，计算速度
@@ -756,7 +766,7 @@ class TrafficDataProcessor:
             
             if speed < low_threshold:
                 anomaly_type = "low_speed"
-                severity = "medium" if speed < 2 else "low"
+                severity = "medium" if speed < 10 else "low"
             elif speed > high_threshold:
                 anomaly_type = "high_speed"
                 severity = "high" if speed > 100 else "medium"
@@ -885,6 +895,18 @@ class TrafficDataProcessor:
     def _calculate_speed(self, df: pd.DataFrame) -> pd.DataFrame:
         """计算车辆速度"""
         df = df.copy()
+        
+        # 如果已经有清洗后的speed_kmh字段，直接使用
+        if 'speed_kmh' in df.columns:
+            df['SPEED'] = df['speed_kmh']
+            return df
+        
+        # 如果已经有SPEED字段，统一将cm/s转换为km/h
+        if 'SPEED' in df.columns:
+            df['SPEED'] = df['SPEED'] * 0.036
+            return df
+        
+        # 如果没有合适的速度字段，则通过GPS轨迹计算
         df['SPEED'] = 0.0
         
         for vehicle_id, group in df.groupby('COMMADDR'):
@@ -896,10 +918,16 @@ class TrafficDataProcessor:
                 time_diff = group.iloc[i]['UTC'] - group.iloc[i-1]['UTC']
                 
                 if time_diff > 0:
-                    # 计算距离（公里）
-                    distance = math.sqrt((lat2 - lat1)**2 + (lon2 - lon1)**2) * 111
+                    # 使用Haversine公式计算更准确的距离
+                    from geopy.distance import geodesic
+                    distance_km = geodesic((lat1, lon1), (lat2, lon2)).kilometers
+                    
                     # 计算速度（km/h）
-                    speed = distance / (time_diff / 3600)
+                    speed = distance_km / (time_diff / 3600)
+                    
+                    # 限制速度在合理范围内（0-150 km/h）
+                    speed = max(0, min(speed, 150))
+                    
                     df.loc[group.iloc[i]['index'], 'SPEED'] = speed
         
         return df
@@ -1433,10 +1461,10 @@ class TrafficDataProcessor:
         analysis_type: str = "comprehensive",
         segment_types: List[str] = ["all"],
         aggregation_level: str = "segment",
-        min_vehicles: int = 10
+        min_vehicles: int = 1
     ) -> Dict[str, Any]:
         """
-        分析路段数据
+        分析路段数据 - 使用预定义路网数据
         
         Args:
             df: 轨迹数据DataFrame
@@ -1450,7 +1478,7 @@ class TrafficDataProcessor:
         """
         try:
             from .road_analysis_engine import RoadAnalysisEngine
-            from .models import TripAnalysisStatistics, RoadSpeedAnalysisResult
+            from .models import RoadSegmentStatistics
             
             if df.empty:
                 return {"error": "数据为空"}
@@ -1461,12 +1489,14 @@ class TrafficDataProcessor:
             # 初始化路段分析引擎
             road_engine = RoadAnalysisEngine()
             
-            # 提取路段信息
-            print("提取路段信息...")
-            road_segments = road_engine.extract_road_segments(df)
+            # 从预定义路网文件加载路段信息，而不是从轨迹动态提取
+            print("加载预定义路网数据...")
+            road_segments = road_engine.load_road_network()
             
             if not road_segments:
-                return {"error": "无法提取路段信息"}
+                return {"error": "无法加载路网数据"}
+            
+            print(f"成功加载 {len(road_segments)} 个路段")
             
             # 分析路段交通数据
             print("分析路段交通数据...")
@@ -1486,140 +1516,389 @@ class TrafficDataProcessor:
             
             # 计算时间范围
             timestamps = [data.timestamp for data in filtered_traffic_data]
-            time_range = (min(timestamps), max(timestamps))
+            time_range = {"start": min(timestamps), "end": max(timestamps)}
             
             # 计算路段统计
             print("计算路段统计...")
-            segment_stats = road_engine.calculate_segment_statistics(filtered_traffic_data, time_range)
+            segment_stats = road_engine.calculate_segment_statistics(filtered_traffic_data, (time_range["start"], time_range["end"]))
+            
+            # 构建符合Pydantic模型要求的segments_data格式
+            segments_data = []
+            for stats in segment_stats:
+                # 将RoadSegmentStatistics对象转换为字典，确保包含所有必需字段
+                segment_data = {
+                    "segment_id": stats.segment_id,
+                    "time_period": stats.time_period,
+                    "total_vehicles": stats.total_vehicles,
+                    "avg_speed": stats.avg_speed,
+                    "speed_variance": stats.speed_variance,
+                    "peak_hour_flow": stats.peak_hour_flow,
+                    "off_peak_flow": stats.off_peak_flow,
+                    "congestion_hours": stats.congestion_hours,
+                    "free_flow_speed": stats.free_flow_speed,
+                    "capacity_utilization": stats.capacity_utilization,
+                    "efficiency_score": stats.efficiency_score
+                }
+                segments_data.append(segment_data)
+            
+            # 构建符合前端期望的简化segments格式（用于可视化）
+            segments_for_display = []
+            matched_count = 0
+            
+            print(f"🔍 开始匹配路段，segment_stats数量: {len(segment_stats)}")
+            print(f"🔍 路网路段数量: {len(road_segments)}")
+            
+            # 创建路段ID映射以提高查找效率
+            road_segment_map = {seg.segment_id: seg for seg in road_segments}
+            print(f"🔍 路段ID映射创建完成，包含 {len(road_segment_map)} 个路段")
+            
+            # 检查ID格式示例
+            if segment_stats:
+                print(f"🔍 统计数据ID示例: '{segment_stats[0].segment_id}' (类型: {type(segment_stats[0].segment_id)})")
+            if road_segments:
+                print(f"🔍 路网数据ID示例: '{road_segments[0].segment_id}' (类型: {type(road_segments[0].segment_id)})")
+            
+            for stats in segment_stats:
+                # 找到对应的路段几何信息
+                road_segment = road_segment_map.get(stats.segment_id)
+                
+                if road_segment:
+                    matched_count += 1
+                    # 计算实际流量：选择峰值和非峰值中的较大值作为代表性流量
+                    actual_flow_rate = max(stats.peak_hour_flow, stats.off_peak_flow)
+                    
+                    segment_display = {
+                        "segment_id": stats.segment_id,
+                        "avg_speed": stats.avg_speed,
+                        "flow_rate": actual_flow_rate,
+                        "congestion_level": self._calculate_congestion_level_from_stats(stats),
+                        "segment_length": road_segment.segment_length,
+                        "road_type": road_segment.road_type,
+                        "vehicle_count": stats.total_vehicles,
+                        "efficiency_score": stats.efficiency_score,
+                        "start_point": road_segment.start_point,
+                        "end_point": road_segment.end_point
+                    }
+                    segments_for_display.append(segment_display)
+                else:
+                    print(f"⚠️ 未找到路段几何信息: {stats.segment_id}")
+                    # 即使没有找到几何信息，也创建一个默认的可视化数据
+                    segment_display = {
+                        "segment_id": stats.segment_id,
+                        "avg_speed": stats.avg_speed,
+                        "flow_rate": stats.peak_hour_flow,
+                        "congestion_level": self._calculate_congestion_level_from_stats(stats),
+                        "segment_length": 0.5,  # 默认长度
+                        "road_type": "urban",    # 默认类型
+                        "vehicle_count": stats.total_vehicles,
+                        "efficiency_score": stats.efficiency_score,
+                        "start_point": {"lat": 36.67, "lng": 117.02},  # 济南市中心默认坐标
+                        "end_point": {"lat": 36.67 + 0.001, "lng": 117.02 + 0.001}  # 略微偏移的终点
+                    }
+                    segments_for_display.append(segment_display)
+            
+            print(f"✅ 路段匹配完成: 成功匹配 {matched_count}/{len(segment_stats)} 个路段")
+            print(f"✅ 生成可视化数据: {len(segments_for_display)} 个路段")
+            
+            # 调试：打印segments_for_display的内容
+            print(f"🔍 segments_for_display内容预览:")
+            for i, seg in enumerate(segments_for_display[:3]):  # 只打印前3个
+                print(f"  路段 {i}: ID={seg.get('segment_id')}, 起点={seg.get('start_point')}, 终点={seg.get('end_point')}")
+            
+            # 计算网络摘要
+            network_summary = road_engine.generate_network_summary(segment_stats, filtered_traffic_data)
+            
+            # 识别瓶颈路段
+            bottleneck_segments = road_engine.identify_bottlenecks(segment_stats)
             
             # 分析结果
             result = {
                 "success": True,
-                "segments": [segment.dict() for segment in road_segments],
-                "traffic_data": [data.dict() for data in filtered_traffic_data],
-                "segment_statistics": [stats.dict() for stats in segment_stats],
+                "total_segments": len(road_segments),
+                "segments_data": segments_data,  # 符合Pydantic模型的数据结构
+                "segments": segments_for_display,  # 符合前端期望的格式（保持向后兼容）
+                "network_summary": network_summary,
+                "bottleneck_segments": bottleneck_segments,
                 "analysis_metadata": {
                     "analysis_type": analysis_type,
                     "segment_types": segment_types,
                     "aggregation_level": aggregation_level,
                     "min_vehicles": min_vehicles,
                     "time_range": time_range,
-                    "total_segments": len(road_segments),
                     "active_segments": len(filtered_traffic_data),
-                    "analysis_timestamp": datetime.now().isoformat()
+                    "analysis_timestamp": time.time()
                 }
             }
             
+            # 调试：验证result中的segments字段
+            print(f"🔍 result构建完成:")
+            print(f"  segments_data数量: {len(result.get('segments_data', []))}")
+            print(f"  segments数量: {len(result.get('segments', []))}")
+            print(f"  第一个segment: {result.get('segments', [{}])[0] if result.get('segments') else 'None'}")
+            
             # 根据分析类型添加特定分析
             if analysis_type in ["comprehensive", "speed"]:
-                speed_distributions = road_engine.analyze_speed_distribution(filtered_traffic_data)
+                # 使用最终的路段统计数据来计算速度分布，而不是原始的traffic_data
+                # 从segments_data中提取速度信息来计算分布
+                speed_data_for_distribution = []
+                for segment in segments_data:
+                    # 创建一个模拟的RoadTrafficData对象用于分布计算
+                    from .models import RoadTrafficData
+                    
+                    # 获取路段的速度统计信息
+                    avg_speed = float(segment.get('avg_speed', 0.0))
+                    vehicle_count = int(segment.get('vehicle_count', 0))
+                    
+                    # 估算min_speed和max_speed（基于avg_speed和一些合理的变化范围）
+                    speed_variance = avg_speed * 0.3  # 假设速度变化范围为平均速度的30%
+                    min_speed = max(0.0, avg_speed - speed_variance)
+                    max_speed = avg_speed + speed_variance
+                    
+                    # 估算traffic_density（基于vehicle_count和路段特征）
+                    segment_length = float(segment.get('length', 1.0))  # 默认1公里
+                    traffic_density = vehicle_count / segment_length if segment_length > 0 else 0.0
+                    
+                    mock_traffic_data = RoadTrafficData(
+                        segment_id=str(segment.get('segment_id', '')),
+                        timestamp=int(time.time()),
+                        vehicle_count=vehicle_count,
+                        avg_speed=avg_speed,
+                        min_speed=float(min_speed),
+                        max_speed=float(max_speed),
+                        traffic_density=float(traffic_density),
+                        flow_rate=float(segment.get('flow_rate', 0.0)),
+                        congestion_level=str(segment.get('congestion_level', 'unknown'))
+                    )
+                    speed_data_for_distribution.append(mock_traffic_data)
+                
+                speed_distributions = road_engine.analyze_speed_distribution(speed_data_for_distribution)
                 result["speed_distributions"] = [dist.dict() for dist in speed_distributions]
             
             if analysis_type in ["comprehensive", "flow"]:
-                flow_patterns = road_engine.analyze_traffic_patterns(filtered_traffic_data)
+                # 同样使用最终的路段数据
+                flow_data_for_patterns = []
+                for segment in segments_data:
+                    from .models import RoadTrafficData
+                    
+                    avg_speed = float(segment.get('avg_speed', 0.0))
+                    vehicle_count = int(segment.get('vehicle_count', 0))
+                    segment_length = float(segment.get('length', 1.0))
+                    
+                    speed_variance = avg_speed * 0.3
+                    min_speed = max(0.0, avg_speed - speed_variance)
+                    max_speed = avg_speed + speed_variance
+                    traffic_density = vehicle_count / segment_length if segment_length > 0 else 0.0
+                    
+                    mock_traffic_data = RoadTrafficData(
+                        segment_id=str(segment.get('segment_id', '')),
+                        timestamp=int(time.time()),
+                        vehicle_count=vehicle_count,
+                        avg_speed=avg_speed,
+                        min_speed=float(min_speed),
+                        max_speed=float(max_speed),
+                        traffic_density=float(traffic_density),
+                        flow_rate=float(segment.get('flow_rate', 0.0)),
+                        congestion_level=str(segment.get('congestion_level', 'unknown'))
+                    )
+                    flow_data_for_patterns.append(mock_traffic_data)
+                
+                flow_patterns = road_engine.analyze_traffic_patterns(flow_data_for_patterns)
                 result["flow_patterns"] = [pattern.dict() for pattern in flow_patterns]
             
-            if analysis_type in ["comprehensive", "congestion"]:
-                bottlenecks = road_engine.identify_bottlenecks(segment_stats)
-                result["bottlenecks"] = bottlenecks
-            
-            # 生成网络摘要
-            network_summary = road_engine.generate_network_summary(segment_stats, filtered_traffic_data)
-            result["network_summary"] = network_summary
-            
-            print(f"路段分析完成: {len(road_segments)} 个路段, {len(filtered_traffic_data)} 条交通数据")
             return result
             
         except Exception as e:
-            print(f"路段分析时出错: {str(e)}")
+            import traceback
+            print(f"分析失败详细信息: {traceback.format_exc()}")
             return {"error": f"分析失败: {str(e)}"}
+
+    def _calculate_congestion_level_from_stats(self, stats) -> str:
+        """根据统计数据计算拥堵等级"""
+        if stats.efficiency_score >= 80:
+            return "free"
+        elif stats.efficiency_score >= 60:
+            return "moderate"
+        elif stats.efficiency_score >= 40:
+            return "heavy"
+        else:
+            return "jam"
     
     def generate_road_visualization_data(
         self, 
-        segments_data: List[Dict],
+        segments_data: List[Any],
         traffic_data: List[Dict],
         visualization_type: str = "speed"
     ) -> Dict[str, Any]:
         """
-        生成路段可视化数据
+        生成道路可视化数据
         
         Args:
-            segments_data: 路段数据列表
+            segments_data: 路段数据列表（可以是字典或RoadSegment对象）
             traffic_data: 交通数据列表
-            visualization_type: 可视化类型 (speed, flow, congestion, efficiency)
+            visualization_type: 可视化类型：speed（速度）, flow（流量）, congestion（拥堵）, efficiency（效率）
             
         Returns:
-            可视化数据字典
+            包含可视化数据的字典
         """
         try:
-            # 创建路段到交通数据的映射
-            segment_traffic_map = {}
-            for traffic in traffic_data:
-                segment_id = traffic.get('segment_id')
-                if segment_id not in segment_traffic_map:
-                    segment_traffic_map[segment_id] = []
-                segment_traffic_map[segment_id].append(traffic)
-            
-            visualization_data = {
-                "type": visualization_type,
-                "segments": [],
-                "legend": self._get_visualization_legend(visualization_type),
-                "statistics": {},
-                "color_mapping": {}
+            start_time = time.time()
+            result = {
+                "segment_colors": {},
+                "legend_info": self._get_visualization_legend(visualization_type),
+                "segments": []  # 添加路段几何数据列表，用于前端渲染
             }
             
-            # 计算可视化值和颜色
+            # 如果没有交通数据，返回空结果
+            if not traffic_data:
+                logger.warning("没有交通数据，无法生成可视化")
+                return result
+            
+            # 创建交通数据的映射，便于快速查找
+            traffic_map = {}
+            for data in traffic_data:
+                # 支持dict或RoadTrafficData对象
+                segment_id = data.segment_id if hasattr(data, 'segment_id') else data.get('segment_id')
+                if segment_id:
+                    traffic_map[segment_id] = data
+            
+            logger.info(f"处理 {len(segments_data)} 个路段的可视化数据...")
+            
+            # 处理每个路段
             for segment in segments_data:
-                segment_id = segment.get('segment_id')
-                traffic_list = segment_traffic_map.get(segment_id, [])
+                # 支持dict或RoadSegment对象
+                if hasattr(segment, 'segment_id'):
+                    segment_id = segment.segment_id
+                else:
+                    segment_id = segment.get('segment_id')
                 
-                if not traffic_list:
+                if not segment_id:
                     continue
                 
-                # 计算可视化值
+                # 获取该路段的交通数据
+                traffic_info = traffic_map.get(segment_id)
+                if not traffic_info:
+                    continue
+                
+                # 根据可视化类型确定颜色
                 if visualization_type == "speed":
-                    value = np.mean([t.get('avg_speed', 0) for t in traffic_list])
-                    color = self._get_speed_color(value)
+                    # 获取平均速度
+                    if hasattr(traffic_info, 'avg_speed'):
+                        avg_speed = traffic_info.avg_speed
+                    else:
+                        avg_speed = traffic_info.get('avg_speed', 0)
+                    color = self._get_speed_color(avg_speed)
+                    
                 elif visualization_type == "flow":
-                    value = np.mean([t.get('flow_rate', 0) for t in traffic_list])
-                    color = self._get_flow_color(value)
+                    # 获取流量
+                    if hasattr(traffic_info, 'flow_rate'):
+                        flow_rate = traffic_info.flow_rate
+                    else:
+                        flow_rate = traffic_info.get('flow_rate', 0)
+                    color = self._get_flow_color(flow_rate)
+                    
                 elif visualization_type == "congestion":
-                    congestion_levels = [t.get('congestion_level', 'free') for t in traffic_list]
-                    value = self._calculate_congestion_score(congestion_levels)
-                    color = self._get_congestion_color(value)
-                else:  # efficiency
-                    value = 75  # 默认效率值
-                    color = self._get_efficiency_color(value)
+                    # 获取拥堵级别
+                    if hasattr(traffic_info, 'congestion_level'):
+                        congestion_level = traffic_info.congestion_level
+                    else:
+                        congestion_level = traffic_info.get('congestion_level', 'free')
+                    
+                    # 将拥堵级别映射为数值
+                    congestion_map = {"free": 0, "moderate": 0.33, "heavy": 0.67, "jam": 1.0}
+                    congestion_score = congestion_map.get(congestion_level, 0)
+                    color = self._get_congestion_color(congestion_score)
+                    
+                elif visualization_type == "efficiency":
+                    # 获取效率评分
+                    if hasattr(traffic_info, 'efficiency_score'):
+                        efficiency = traffic_info.efficiency_score
+                    else:
+                        efficiency = traffic_info.get('efficiency_score', 80)
+                    color = self._get_efficiency_color(efficiency)
+                    
+                else:
+                    # 默认为灰色
+                    color = "#888888"
                 
-                segment_vis_data = {
-                    "segment_id": segment_id,
-                    "start_point": segment.get('start_point'),
-                    "end_point": segment.get('end_point'),
-                    "value": round(value, 2),
-                    "color": color,
-                    "road_type": segment.get('road_type'),
-                    "road_name": segment.get('road_name'),
-                    "segment_length": segment.get('segment_length', 0)
-                }
+                # 将颜色添加到结果中
+                result["segment_colors"][segment_id] = color
                 
-                visualization_data["segments"].append(segment_vis_data)
-                visualization_data["color_mapping"][segment_id] = color
+                # 构建路段几何数据，用于前端地图渲染
+                segment_geometry = {}
+                
+                # 提取路段起点和终点
+                if hasattr(segment, 'start_point') and hasattr(segment, 'end_point'):
+                    # RoadSegment对象
+                    segment_geometry = {
+                        "id": segment_id,
+                        "start": {
+                            "lat": segment.start_point.get('lat', 0) if isinstance(segment.start_point, dict) else segment.start_point.lat,
+                            "lng": segment.start_point.get('lng', 0) if isinstance(segment.start_point, dict) else segment.start_point.lng
+                        },
+                        "end": {
+                            "lat": segment.end_point.get('lat', 0) if isinstance(segment.end_point, dict) else segment.end_point.lat,
+                            "lng": segment.end_point.get('lng', 0) if isinstance(segment.end_point, dict) else segment.end_point.lng
+                        },
+                        "road_type": segment.road_type if hasattr(segment, 'road_type') else "unknown",
+                    }
+                elif isinstance(segment, dict):
+                    # 字典对象
+                    start_point = segment.get('start_point', {})
+                    end_point = segment.get('end_point', {})
+                    
+                    segment_geometry = {
+                        "id": segment_id,
+                        "start": {
+                            "lat": start_point.get('lat', 0),
+                            "lng": start_point.get('lng', 0)
+                        },
+                        "end": {
+                            "lat": end_point.get('lat', 0),
+                            "lng": end_point.get('lng', 0)
+                        },
+                        "road_type": segment.get('road_type', "unknown"),
+                    }
+                
+                # 添加可视化特定属性
+                if visualization_type == "speed":
+                    if hasattr(traffic_info, 'avg_speed'):
+                        segment_geometry["avg_speed"] = traffic_info.avg_speed
+                    else:
+                        segment_geometry["avg_speed"] = traffic_info.get('avg_speed', 0)
+                        
+                elif visualization_type == "flow":
+                    if hasattr(traffic_info, 'flow_rate'):
+                        segment_geometry["flow"] = traffic_info.flow_rate
+                    else:
+                        segment_geometry["flow"] = traffic_info.get('flow_rate', 0)
+                        
+                elif visualization_type == "congestion":
+                    if hasattr(traffic_info, 'congestion_level'):
+                        segment_geometry["congestion_level"] = traffic_info.congestion_level
+                    else:
+                        segment_geometry["congestion_level"] = traffic_info.get('congestion_level', 'free')
+                    segment_geometry["congestion_score"] = congestion_score
+                    
+                elif visualization_type == "efficiency":
+                    segment_geometry["efficiency"] = efficiency
+                
+                # 添加到结果的路段列表中
+                result["segments"].append(segment_geometry)
             
-            # 计算统计信息
-            if visualization_data["segments"]:
-                values = [s["value"] for s in visualization_data["segments"]]
-                visualization_data["statistics"] = {
-                    "min_value": min(values),
-                    "max_value": max(values),
-                    "avg_value": np.mean(values),
-                    "total_segments": len(visualization_data["segments"])
-                }
+            processing_time = time.time() - start_time
+            logger.info(f"道路可视化数据生成完成，处理了 {len(result['segments'])} 个路段，耗时 {processing_time:.2f} 秒")
             
-            return visualization_data
+            return result
             
         except Exception as e:
-            print(f"生成可视化数据时出错: {str(e)}")
-            return {"error": f"生成可视化数据失败: {str(e)}"}
+            logger.error(f"生成可视化数据时出错: {str(e)}")
+            logger.error(f"错误详情: {traceback.format_exc()}")
+            return {
+                "segment_colors": {},
+                "legend_info": {},
+                "segments": [],
+                "error": str(e)
+            }
     
     def _get_visualization_legend(self, viz_type: str) -> Dict[str, Any]:
         """获取可视化图例信息"""
@@ -2113,3 +2392,80 @@ class TrafficDataProcessor:
             'vehicle_flow_variance': round(daily_vehicles.var(), 2),
             'data_completeness': round((date_span / 7) * 100, 1)  # 假设一周7天的完整度
         } 
+
+    def get_vehicle_count_estimate(self) -> int:
+        """
+        读取车辆索引文件，返回车辆数量估算
+        """
+        try:
+            index_path = os.path.join(
+                os.path.dirname(__file__),
+                'data', 'indexes', 'vehicle_index.json'
+            )
+            if not os.path.exists(index_path):
+                return 0
+            with open(index_path, 'r', encoding='utf-8') as f:
+                vehicle_index = json.load(f)
+            return len(vehicle_index)
+        except Exception as e:
+            print(f"车辆数量估算失败: {e}")
+            return 0
+            
+    def get_point_count_estimate(self) -> int:
+        """
+        估算数据点总数
+        """
+        try:
+            # 尝试使用预处理数据统计
+            if self.use_preprocessed:
+                total_points = 0
+                # 统计所有parquet文件的大小来估算
+                for file in os.listdir(self.processed_dir):
+                    if file.endswith('.parquet'):
+                        file_path = os.path.join(self.processed_dir, file)
+                        # 使用文件大小估算
+                        # 假设每条记录平均50字节
+                        total_points += os.path.getsize(file_path) // 50
+                
+                if total_points > 0:
+                    return total_points
+            
+            # 如果没有预处理数据，使用CSV文件估算
+            total_size = 0
+            for file in self.get_csv_files():
+                if os.path.exists(file):
+                    total_size += os.path.getsize(file)
+            
+            # 假设每条记录平均100字节
+            estimated_points = total_size // 100
+            return max(1000000, estimated_points)  # 至少返回100万点
+            
+        except Exception as e:
+            print(f"数据点数量估算失败: {e}")
+            # 返回一个合理的默认值
+            return 5000000
+
+    def _standardize_dataframe(self, df):
+        """
+        统一常用字段名，防止后续分析出错，并自动归一化经纬度
+        """
+        rename_map = {
+            'COMMADDR': 'vehicle_id',
+            'UTC': 'timestamp',
+            'LAT': 'latitude',
+            'LON': 'longitude'
+        }
+        for old, new in rename_map.items():
+            if old in df.columns:
+                df[new] = df[old]
+        # 经纬度如果是整型，转为浮点型
+        if 'latitude' in df.columns and df['latitude'].dtype != float:
+            df['latitude'] = df['latitude'].astype(float)
+        if 'longitude' in df.columns and df['longitude'].dtype != float:
+            df['longitude'] = df['longitude'].astype(float)
+        # 自动归一化经纬度（如超出地理范围，自动除以1e5）
+        if 'latitude' in df.columns and df['latitude'].abs().max() > 90:
+            df['latitude'] = df['latitude'] / 1e5
+        if 'longitude' in df.columns and df['longitude'].abs().max() > 180:
+            df['longitude'] = df['longitude'] / 1e5
+        return df
