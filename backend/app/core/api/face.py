@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Path, Body, Depends
 from sqlalchemy.orm import Session
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from typing import List, Optional, Set
 import os, pickle, base64, io, datetime, csv, uuid
 import numpy as np
@@ -10,6 +10,7 @@ import face_recognition
 import cv2  # 新增：始终可用的 OpenCV
 from app.core.utils.antispoof import light_check, predict_single_frame  # 新增：光感 + 量子检测
 from app.core.utils.deepfake_vit import predict_deepfake_vit
+from app.core.utils.encryption import encrypt_data, decrypt_data # 修正：添加此行
 
 # Database imports
 from database.database import get_db
@@ -398,7 +399,25 @@ async def get_image(filename: str):
     fp = os.path.join(IMAGES_DIR, os.path.basename(filename))
     if not os.path.exists(fp):
         raise HTTPException(404, "图片不存在")
-    return FileResponse(fp)
+    
+    # 修改：读取加密文件，解密后返回
+    try:
+        # 1. 读取加密文件的所有字节
+        with open(fp, "rb") as f:
+            encrypted_data = f.read()
+
+        # 2. 解密数据
+        decrypted_data = decrypt_data(encrypted_data)
+
+        # 3. 将解密后的字节作为流式响应返回
+        # MIME type for PNG images is "image/png"
+        return StreamingResponse(io.BytesIO(decrypted_data), media_type="image/png")
+    except Exception as e:
+        # 如果解密失败，这可能是一个安全事件，或者文件本身不是一个有效的加密文件
+        print(f"解密图片 {filename} 时发生严重错误: {e}")
+        # 返回404，避免泄露文件存在的具体信息
+        raise HTTPException(status_code=404, detail="无法加载图片")
+
 
 @router.post("/register")
 async def register(body: RegisterBody):
@@ -427,8 +446,25 @@ async def register(body: RegisterBody):
     fnames = []
     for idx, arr in enumerate(crops):
         fname = f"{ts}_{idx}_{uuid.uuid4().hex[:6]}.png"
-        Image.fromarray(arr).save(os.path.join(IMAGES_DIR, fname))
-        fnames.append(fname)
+        # 修改：在保存前进行加密
+        try:
+            # 1. 将图像数据转为内存中的字节流
+            img_byte_arr = io.BytesIO()
+            Image.fromarray(arr).save(img_byte_arr, format='PNG')
+            img_bytes = img_byte_arr.getvalue()
+
+            # 2. 加密字节数据
+            encrypted_bytes = encrypt_data(img_bytes)
+
+            # 3. 将加密后的数据写入文件
+            with open(os.path.join(IMAGES_DIR, fname), "wb") as f:
+                f.write(encrypted_bytes)
+            
+            fnames.append(fname)
+        except Exception as e:
+            # 如果加密或保存失败，记录错误，但可能继续处理其他图片
+            print(f"处理并加密图片 {fname} 时出错: {e}")
+
     if encodings:
         avg_enc = np.mean(encodings, axis=0)
         for k in known_faces:
