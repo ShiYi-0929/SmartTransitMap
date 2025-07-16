@@ -153,7 +153,7 @@ class ClusteringRequest(BaseModel):
     params: Dict[str, Any] = {}
     data_type: str = "pickup"  # "pickup", "dropoff", "all_points"
 
-class HeatmapRequest(BaseModel):
+class HeatmapConfigRequest(BaseModel):
     """热力图请求参数"""
     temporal_resolution: int = 15  # 时间分辨率（分钟）
     spatial_resolution: float = 0.001  # 空间分辨率（度）
@@ -263,10 +263,12 @@ class TrafficFlowPattern(BaseModel):
 class RoadAnalysisRequest(BaseModel):
     """路段分析请求参数"""
     analysis_type: str = "comprehensive"  # comprehensive, speed, flow, congestion
+    road_types: List[str] = ["highway", "arterial", "urban", "local"]  # 路段类型过滤
     segment_types: List[str] = ["all"]  # highway, urban, arterial, local, all
     aggregation_level: str = "segment"  # segment, road, network
+    include_statistics: bool = True  # 是否包含统计数据
     include_patterns: bool = True
-    min_vehicles: int = 10  # 最小车辆数阈值
+    min_vehicles: int = 1  # 最小车辆数阈值（降低默认值）
 
 # API响应模型
 class RoadSegmentResponse(BaseModel):
@@ -288,6 +290,7 @@ class RoadAnalysisResponse(BaseModel):
     success: bool
     message: str
     analysis: RoadNetworkAnalysis
+    segments: Optional[List[Dict[str, Any]]] = []  # 添加segments字段，用于前端地图渲染
     speed_distributions: List[SpeedDistribution]
     flow_patterns: List[TrafficFlowPattern]
     processing_time: Optional[float] = None
@@ -296,9 +299,10 @@ class RoadVisualizationResponse(BaseModel):
     """路段可视化API响应"""
     success: bool
     message: str
-    visualization_data: Dict[str, Any]
-    segment_colors: Dict[str, str]  # segment_id -> color mapping
-    legend_info: Dict[str, Any]
+    visualization_data: Dict[str, Any] = {}
+    segment_colors: Dict[str, str] = {}
+    legend_info: Dict[str, Any] = {}
+    processing_details: Optional[Dict[str, Any]] = None
 
 # 智能客运监控相关模型
 class WeatherData(BaseModel):
@@ -372,13 +376,17 @@ class SmartPassengerRequest(BaseModel):
 
 class WeatherImpactRequest(BaseModel):
     """天气影响分析请求参数"""
+    start_time: Optional[float] = None  # 开始时间戳（UTC）
+    end_time: Optional[float] = None    # 结束时间戳（UTC）
     weather_types: List[str] = ["all"]  # sunny, rainy, snowy, etc.
     correlation_method: str = "pearson"  # pearson, spearman, kendall
     include_prediction: bool = False
 
 class TaxiDemandRequest(BaseModel):
     """出租车需求分析请求参数"""
-    real_time_monitoring: bool = True
+    start_time: Optional[float] = None  # 开始时间戳（UTC）
+    end_time: Optional[float] = None    # 结束时间戳（UTC）
+    historical_analysis: bool = True
     demand_zones: List[str] = ["all"]  # 指定分析区域
     supply_threshold: float = 0.8  # 供需比例阈值
     include_forecasting: bool = False
@@ -485,10 +493,10 @@ class OrderSpeedAnalysisRequest(BaseModel):
     spatial_resolution: float = 0.001  # 空间分辨率
     min_orders_per_location: int = 5  # 每个位置最小订单数
     congestion_threshold: Dict[str, float] = {
-        "free": 40,      # >40km/h 为畅通
-        "moderate": 25,  # 25-40km/h 为缓慢  
-        "heavy": 15,     # 15-25km/h 为拥堵
-        "jam": 0         # <15km/h 为严重拥堵
+        "free": 20,      # >20km/h 为畅通 (降低阈值)
+        "moderate": 10,  # 10-20km/h 为缓慢 (降低阈值)
+        "heavy": 5,      # 5-10km/h 为拥堵 (降低阈值)
+        "jam": 0         # <5km/h 为严重拥堵 (降低阈值)
     }
 
 # API响应模型
