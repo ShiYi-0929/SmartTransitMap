@@ -1,3 +1,6 @@
+直接把压缩包里的shape_predictor_68_face_landmarks.dat放到这里也行
+
+
 # dlib 人脸关键点检测模型
 
 眨眼检测功能需要下载 dlib 的 68 点人脸关键点检测模型文件。
