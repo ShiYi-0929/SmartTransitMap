@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Query, Depends, HTTPException
 import pandas as pd
 import os
-import datetime
+from datetime import datetime, timedelta
 from collections import defaultdict
 from typing import List, Dict, Optional, Any, Union
 from .data_processor import TrafficDataProcessor
 from .heatmap import HeatmapGenerator
 from .track import TrackAnalyzer
-# from .data_cleaner import TrafficDataCleaner, DataQualityAnalyzer  # 已删除数据清洗功能
+from .traffic_statistics_loader import TrafficStatisticsLoader
 
 from .models import (
     TimeRangeRequest, TrafficQueryRequest, HeatmapRequest, 
@@ -33,6 +33,9 @@ import logging
 import traceback
 import time
 import json
+from pydantic import BaseModel
+from pathlib import Path
+from typing import List, Dict
 
 # 设置日志
 logging.basicConfig(level=logging.INFO)
@@ -44,6 +47,7 @@ router = APIRouter()
 data_processor = TrafficDataProcessor()
 heatmap_generator = HeatmapGenerator()
 track_analyzer = TrackAnalyzer()
+traffic_stats_loader = TrafficStatisticsLoader()
 # data_cleaner = TrafficDataCleaner()  # 已删除数据清洗功能
 # quality_analyzer = DataQualityAnalyzer()  # 已删除数据清洗功能
 
@@ -2780,6 +2784,549 @@ async def analyze_order_based_road_speed(
             ),
             visualization_data={}
         )
+    
+class DailyTrafficResponse(BaseModel):
+    success: bool
+    message: str
+    data: List[int]  # 24小时的车辆数数组
 
+class WeeklyTrafficResponse(BaseModel):
+    success: bool
+    message: str
+    data: List[Dict[str, Union[str, int]]]  # 按天的日期和车辆总数
 
+class KeyMetric(BaseModel):
+    title: str
+    value: str
+    trend: float
 
+class MetricsResponse(BaseModel):
+    success: bool
+    message: str
+    data: List[KeyMetric]
+
+class AreaStat(BaseModel):
+    id: int
+    name: str
+    totalVehicles: int
+    avgSpeed: float
+    congestionRate: float
+    trafficLevel: str
+
+class AreaStatsResponse(BaseModel):
+    success: bool
+    message: str
+    data: List[AreaStat]
+
+class PeriodStat(BaseModel):
+    name: str
+    timeRange: str
+    avgVehicles: int
+    avgSpeed: float
+    status: str
+    statusClass: str
+
+class PeriodStatsResponse(BaseModel):
+    success: bool
+    message: str
+    data: List[PeriodStat]
+
+# --- 辅助函数 ---
+def load_spatial_grid():
+    grid_file = Path(os.path.join(os.path.dirname(__file__), 'data', 'indexes', 'spatial_grid_0.001.json'))
+    if grid_file.exists():
+        with open(grid_file, 'r') as f:
+            return json.load(f)
+    # 默认网格（示例数据，需替换为实际网格）
+    return {
+        "1": {"name": "市中心核心区", "bounds": [36.65, 36.67, 117.00, 117.02]},
+        "2": {"name": "商业购物区", "bounds": [36.67, 36.69, 117.02, 117.04]},
+        "3": {"name": "住宅居民区", "bounds": [36.69, 36.71, 117.04, 117.06]},
+        "4": {"name": "工业开发区", "bounds": [36.71, 36.73, 117.06, 117.08]},
+        "5": {"name": "文教科研区", "bounds": [36.73, 36.75, 117.08, 117.10]},
+        "6": {"name": "交通枢纽区", "bounds": [36.75, 36.77, 117.10, 117.12]},
+        "7": {"name": "休闲娱乐区", "bounds": [36.77, 36.79, 117.12, 117.14]}
+    }
+
+def calculate_congestion_rate(vehicle_count: int, area_size: float = 1.2321) -> tuple[float, str]:
+    """计算拥堵率和流量等级，面积单位为平方公里"""
+    density = vehicle_count / area_size
+    congestion_rate = min(density * 100, 100)  # 简单密度公式，需调整
+    if congestion_rate >= 80:
+        return congestion_rate, "严重拥堵"
+    elif congestion_rate >= 60:
+        return congestion_rate, "重度拥堵"
+    elif congestion_rate >= 40:
+        return congestion_rate, "中度拥堵"
+    elif congestion_rate >= 20:
+        return congestion_rate, "轻度拥堵"
+    else:
+        return congestion_rate, "基本畅通"
+
+# --- 新增 API 端点 ---
+@router.get("/daily", response_model=DailyTrafficResponse)
+async def get_daily_traffic(
+    date: str = Query(None, description="日期，格式为YYYY-MM-DD，默认为今天")
+):
+    """获取每日流量趋势（24小时车辆数）- 使用完整数据统计"""
+    try:
+        if not date:
+            date = datetime.now().strftime("%Y-%m-%d")
+        
+        logger.info(f"开始查询每日完整流量趋势: {date}")
+        
+        start_time = convert_time_to_timestamp(f"{date} 00:00:00")
+        end_time = start_time + 24 * 3600 - 1
+        
+        logger.info(f"时间范围: {start_time} - {end_time}")
+        
+        # 使用专用的流量统计加载器获取完整的小时统计
+        hourly_counts = traffic_stats_loader.get_hourly_traffic_counts(start_time, end_time)
+        
+        if not hourly_counts or all(count == 0 for count in hourly_counts):
+            logger.warning(f"未找到日期 {date} 的流量数据")
+            return DailyTrafficResponse(
+                success=False,
+                message="未找到指定日期的流量数据",
+                data=[0] * 24
+            )
+        
+        total_vehicles = sum(hourly_counts)
+        logger.info(f"小时统计完成: 总车辆数 {total_vehicles}")
+        
+        return DailyTrafficResponse(
+            success=True,
+            message=f"成功获取 {date} 的每日完整流量数据，总车辆数: {total_vehicles}",
+            data=convert_numpy_types(hourly_counts)
+        )
+    except Exception as e:
+        logger.error(f"每日流量查询失败: {str(e)}")
+        logger.error(f"错误详情: {traceback.format_exc()}")
+        return DailyTrafficResponse(
+            success=False,
+            message=f"查询失败: {str(e)}",
+            data=[0] * 24
+        )
+
+@router.get("/weekly", response_model=WeeklyTrafficResponse)
+async def get_weekly_traffic(
+    start_date: str = Query(None, description="周起始日期，格式为YYYY-MM-DD，默认为数据集的起始周")
+):
+    """获取每周流量趋势（7天每日车辆总数）- 使用完整数据统计"""
+    try:
+        # 🔧 修复：使用数据集的实际日期范围
+        if not start_date:
+            # 使用数据集的起始日期：2013-09-12 (周四)
+            start_date = "2013-09-12"
+        
+        # 验证日期是否在数据集范围内
+        dataset_start = "2013-09-12"  # 数据集起始日期
+        dataset_end = "2013-09-18"    # 数据集结束日期
+        
+        # 检查请求的日期是否在有效范围内
+        requested_date = datetime.strptime(start_date, "%Y-%m-%d")
+        dataset_start_date = datetime.strptime(dataset_start, "%Y-%m-%d")
+        dataset_end_date = datetime.strptime(dataset_end, "%Y-%m-%d")
+        
+        if requested_date < dataset_start_date or requested_date > dataset_end_date:
+            logger.warning(f"请求的日期 {start_date} 超出数据集范围 {dataset_start} 到 {dataset_end}")
+            return WeeklyTrafficResponse(
+                success=False,
+                message=f"请求的日期超出数据集范围，可用日期：{dataset_start} 到 {dataset_end}",
+                data=[]
+            )
+        
+        start_time = convert_time_to_timestamp(f"{start_date} 00:00:00")
+        end_time = start_time + 7 * 24 * 3600 - 1
+        
+        logger.info(f"查询每周完整流量趋势: {start_date} ({start_time} - {end_time})")
+        
+        # 使用专用的流量统计加载器获取完整的每日统计
+        daily_counts = traffic_stats_loader.get_daily_traffic_counts(start_time, end_time, days=7)
+        
+        if not daily_counts or all(item['totalVehicles'] == 0 for item in daily_counts):
+            logger.warning(f"未找到周 {start_date} 的流量数据")
+            # 构造默认的7天数据
+            result = []
+            current_date = datetime.fromtimestamp(start_time)
+            for i in range(7):
+                date_str = (current_date + timedelta(days=i)).strftime("%Y-%m-%d")
+                result.append({"date": date_str, "totalVehicles": 0})
+            return WeeklyTrafficResponse(
+                success=False,
+                message="未找到指定周的流量数据",
+                data=result
+            )
+        
+        total_week_vehicles = sum(item['totalVehicles'] for item in daily_counts)
+        logger.info(f"每日统计完成: 7天总车辆数 {total_week_vehicles}")
+        
+        return WeeklyTrafficResponse(
+            success=True,
+            message=f"成功获取 {start_date} 开始的周完整流量数据，总车辆数: {total_week_vehicles}",
+            data=convert_numpy_types(daily_counts)
+        )
+    except Exception as e:
+        logger.error(f"每周流量查询失败: {str(e)}")
+        logger.error(f"错误详情: {traceback.format_exc()}")
+        # 构造默认的7天数据作为错误回退
+        result = []
+        try:
+            if 'start_time' in locals():
+                current_date = datetime.fromtimestamp(start_time)
+                for i in range(7):
+                    date_str = (current_date + timedelta(days=i)).strftime("%Y-%m-%d")
+                    result.append({"date": date_str, "totalVehicles": 0})
+        except:
+            # 如果连时间戳都有问题，使用数据集的起始日期构造
+            start_date_obj = datetime.strptime("2013-09-12", "%Y-%m-%d")
+            for i in range(7):
+                date_str = (start_date_obj + timedelta(days=i)).strftime("%Y-%m-%d")
+                result.append({"date": date_str, "totalVehicles": 0})
+        
+        return WeeklyTrafficResponse(
+            success=False,
+            message=f"查询失败: {str(e)}",
+            data=result
+        )
+
+@router.get("/metrics", response_model=MetricsResponse)
+async def get_metrics(
+    date: str = Query(None, description="日期，格式为YYYY-MM-DD，默认为数据集起始日期"),
+    period: str = Query("today", description="时间范围：today, week（兼容性参数）")
+):
+    """获取关键指标（总流量、平均速度、高峰时长、活跃用户）- 使用完整数据统计"""
+    try:
+        # 🔧 修复：使用数据集的实际日期范围
+        if date:
+            # 验证日期是否在数据集范围内
+            dataset_start = "2013-09-12"
+            dataset_end = "2013-09-18"
+
+            requested_date = datetime.strptime(date, "%Y-%m-%d")
+            dataset_start_date = datetime.strptime(dataset_start, "%Y-%m-%d")
+            dataset_end_date = datetime.strptime(dataset_end, "%Y-%m-%d")
+
+            if requested_date < dataset_start_date or requested_date > dataset_end_date:
+                return MetricsResponse(
+                    success=False,
+                    message=f"请求的日期超出数据集范围，可用日期：{dataset_start} 到 {dataset_end}",
+                    data=[
+                        KeyMetric(title="总流量", value="0", trend=0),
+                        KeyMetric(title="平均速度", value="0.0km/h", trend=0),
+                        KeyMetric(title="高峰时长", value="0.0h", trend=0),
+                        KeyMetric(title="活跃用户", value="0", trend=0)
+                    ]
+                )
+
+            # 使用传入的具体日期
+            start_time = datetime.strptime(date, "%Y-%m-%d")
+            end_time = start_time + timedelta(days=1) - timedelta(seconds=1)
+            hours = 24
+            period_desc = f"日期 {date}"
+        else:
+            # 使用数据集的默认日期而不是当前时间
+            if period == "today":
+                start_time = datetime.strptime("2013-09-12", "%Y-%m-%d")  # 数据集起始日期
+                end_time = start_time + timedelta(days=1) - timedelta(seconds=1)
+                hours = 24
+                period_desc = "数据集起始日期(2013-09-12)"
+            else:  # week
+                start_time = datetime.strptime("2013-09-12", "%Y-%m-%d")  # 数据集起始日期
+                end_time = start_time + timedelta(days=7) - timedelta(seconds=1)
+                hours = 7 * 24
+                period_desc = "数据集的完整周(2013-09-12 到 2013-09-18)"
+
+        start_timestamp = int(start_time.timestamp())
+        end_timestamp = int(end_time.timestamp())
+
+        logger.info(f"查询关键指标: {period_desc} ({start_timestamp} - {end_timestamp})")
+
+        # 🚀 使用新的流量统计加载器计算指标
+        metrics_data = traffic_stats_loader.calculate_key_metrics(
+            start_timestamp, 
+            end_timestamp, 
+            hours
+        )
+
+        if not metrics_data["data_available"]:
+            logger.warning(f"未找到 {period_desc} 的数据")
+            return MetricsResponse(
+                success=False,
+                message=f"未找到{period_desc}的流量数据",
+                data=[
+                    KeyMetric(title="总流量", value="0", trend=0),
+                    KeyMetric(title="平均速度", value="0.0km/h", trend=0),
+                    KeyMetric(title="高峰时长", value="0.0h", trend=0),
+                    KeyMetric(title="活跃用户", value="0", trend=0)
+                ]
+            )
+
+        # 📊 构建指标结果
+        metrics = [
+            KeyMetric(
+                title="总流量", 
+                value=f"{metrics_data['total_vehicles']:,}", 
+                trend=0
+            ),
+            KeyMetric(
+                title="平均速度", 
+                value=f"{metrics_data['avg_speed']:.1f}km/h", 
+                trend=0
+            ),
+            KeyMetric(
+                title="高峰时长", 
+                value=f"{metrics_data['peak_hours']:.1f}h", 
+                trend=0
+            ),
+            KeyMetric(
+                title="活跃用户", 
+                value=f"{metrics_data['unique_vehicles']:,}", 
+                trend=0
+            )
+        ]
+
+        # 📈 添加详细的成功消息
+        success_message = (
+            f"成功获取{period_desc}的关键指标 - "
+            f"总流量: {metrics_data['total_vehicles']:,}, "
+            f"活跃车辆: {metrics_data['unique_vehicles']:,}, "
+            f"平均速度: {metrics_data['avg_speed']:.1f}km/h"
+        )
+
+        return MetricsResponse(
+            success=True,
+            message=success_message,
+            data=convert_numpy_types(metrics)
+        )
+
+    except ValueError as ve:
+        # 处理日期格式错误
+        logger.error(f"日期格式错误: {str(ve)}")
+        return MetricsResponse(
+            success=False,
+            message=f"日期格式错误，请使用YYYY-MM-DD格式: {str(ve)}",
+            data=[
+                KeyMetric(title="总流量", value="0", trend=0),
+                KeyMetric(title="平均速度", value="0.0km/h", trend=0),
+                KeyMetric(title="高峰时长", value="0.0h", trend=0),
+                KeyMetric(title="活跃用户", value="0", trend=0)
+            ]
+        )
+    except Exception as e:
+        logger.error(f"关键指标查询失败: {str(e)}")
+        logger.error(f"错误详情: {traceback.format_exc()}")
+        return MetricsResponse(
+            success=False,
+            message=f"查询失败: {str(e)}",
+            data=[
+                KeyMetric(title="总流量", value="0", trend=0),
+                KeyMetric(title="平均速度", value="0.0km/h", trend=0),
+                KeyMetric(title="高峰时长", value="0.0h", trend=0),
+                KeyMetric(title="活跃用户", value="0", trend=0)
+            ]
+        )
+    
+@router.get("/areas", response_model=AreaStatsResponse)
+async def get_area_stats(
+    date: str = Query(None, description="日期，格式为YYYY-MM-DD"),
+    period: str = Query("today", description="时间范围：today, week（兼容性参数）")
+):
+    """获取区域统计（车辆数、平均速度、拥堵率、流量等级）"""
+    try:
+        spatial_grid = load_spatial_grid()
+        
+        # 🔧 修复：使用传入的日期
+        if date:
+            start_time = datetime.strptime(date, "%Y-%m-%d")
+            end_time = start_time + timedelta(days=1) - timedelta(seconds=1)
+            period_desc = f"日期 {date}"
+        else:
+            start_time = datetime.now()
+            if period == "today":
+                start_time = start_time.replace(hour=0, minute=0, second=0, microsecond=0)
+                end_time = start_time + timedelta(days=1) - timedelta(seconds=1)
+                period_desc = "今日"
+            else:  # week
+                start_time = start_time - timedelta(days=start_time.weekday())
+                end_time = start_time + timedelta(days=7) - timedelta(seconds=1)
+                period_desc = "本周"
+        
+        start_timestamp = int(start_time.timestamp())
+        end_timestamp = int(end_time.timestamp())
+        
+        logger.info(f"查询区域统计: {period_desc} ({start_timestamp} - {end_timestamp})")
+        
+        # 加载数据
+        df = data_processor.load_data(start_timestamp, end_timestamp)
+        
+        if df.empty:
+            return AreaStatsResponse(
+                success=False,
+                message="未找到指定时间范围的流量数据",
+                data=[]
+            )
+        
+        # 按区域聚合
+        area_data = {grid_id: {"total_vehicles": 0, "total_speed": 0, "count": 0} for grid_id in spatial_grid}
+        
+        for _, row in df.iterrows():
+            # 正确处理坐标
+            lat = row['LAT'] / 1e5 if 'LAT' in row else 0
+            lon = row['LON'] / 1e5 if 'LON' in row else 0
+            
+            for grid_id, grid in spatial_grid.items():
+                min_lat, max_lat, min_lon, max_lon = grid['bounds']
+                if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
+                    area_data[grid_id]['total_vehicles'] += 1
+                    # 正确处理速度
+                    speed = 0
+                    if 'SPEED' in row and pd.notna(row['SPEED']):
+                        speed = row['SPEED']
+                    elif 'speed' in row and pd.notna(row['speed']):
+                        speed = row['speed']
+                    area_data[grid_id]['total_speed'] += speed
+                    area_data[grid_id]['count'] += 1
+                    break
+        
+        # 构造结果
+        result = []
+        for grid_id, data in area_data.items():
+            if data['count'] > 0:
+                avg_speed = data['total_speed'] / data['count']
+                congestion_rate, traffic_level = calculate_congestion_rate(data['total_vehicles'])
+                result.append(AreaStat(
+                    id=int(grid_id),
+                    name=spatial_grid[grid_id]['name'],
+                    totalVehicles=data['total_vehicles'],
+                    avgSpeed=round(avg_speed, 1),
+                    congestionRate=round(congestion_rate, 1),
+                    trafficLevel=traffic_level
+                ))
+        
+        return AreaStatsResponse(
+            success=True,
+            message=f"成功获取 {period} 的区域统计数据，共 {len(result)} 个区域",
+            data=convert_numpy_types(result)
+        )
+    except Exception as e:
+        logger.error(f"区域统计查询失败: {str(e)}")
+        return AreaStatsResponse(
+            success=False,
+            message=f"查询失败: {str(e)}",
+            data=[]
+        )
+
+@router.get("/periods", response_model=PeriodStatsResponse)
+async def get_period_stats(
+    date: str = Query(None, description="日期，格式为YYYY-MM-DD"),
+    period: str = Query("today", description="时间范围：today, week（兼容性参数）")
+):
+    """获取时间段统计（早高峰、晚高峰、平峰）"""
+    try:
+        # 🔧 修复：使用传入的日期
+        if date:
+            start_time = datetime.strptime(date, "%Y-%m-%d")
+            days = 1
+            period_desc = f"日期 {date}"
+        else:
+            start_time = datetime.now()
+            if period == "today":
+                start_time = start_time.replace(hour=0, minute=0, second=0, microsecond=0)
+                days = 1
+                period_desc = "今日"
+            else:  # week
+                start_time = start_time - timedelta(days=start_time.weekday())
+                days = 7
+                period_desc = "本周"
+        
+        periods = [
+            {"name": "早高峰", "start_hour": 7, "end_hour": 9, "timeRange": "07:00-09:00"},
+            {"name": "晚高峰", "start_hour": 17, "end_hour": 19, "timeRange": "17:00-19:00"},
+            {"name": "平峰时段", "start_hour": 10, "end_hour": 16, "timeRange": "10:00-16:00"}
+        ]
+        
+        start_timestamp = int(start_time.timestamp())
+        end_timestamp = int((start_time + timedelta(days=days)).timestamp() - 1)
+        
+        logger.info(f"查询时间段统计: {period_desc} ({start_timestamp} - {end_timestamp})")
+        # 加载数据
+        df = data_processor.load_data(start_timestamp, end_timestamp)
+        
+        if df.empty:
+            return PeriodStatsResponse(
+                success=False,
+                message="未找到指定时间范围的流量数据",
+                data=[PeriodStat(
+                    name=p['name'],
+                    timeRange=p['timeRange'],
+                    avgVehicles=0,
+                    avgSpeed=0.0,
+                    status="畅通",
+                    statusClass="bg-green-500/20 text-green-400"
+                ) for p in periods]
+            )
+        
+        # 按时间段聚合
+        result = []
+        time_col = 'UTC' if 'UTC' in df.columns else 'timestamp'
+        df['hour'] = pd.to_datetime(df[time_col], unit='s').dt.hour
+        df['date'] = pd.to_datetime(df[time_col], unit='s').dt.date
+        
+        for p in periods:
+            total_vehicles = 0
+            total_speed = 0
+            count = 0
+            
+            for day in range(days):
+                day_start = start_time + datetime.timedelta(days=day)
+                day_df = df[df['date'] == day_start.date()]
+                period_df = day_df[day_df['hour'].between(p['start_hour'], p['end_hour'] - 1)]
+                
+                total_vehicles += len(period_df)
+                # 正确计算速度
+                speed_sum = 0
+                if 'SPEED' in period_df.columns:
+                    speed_sum = period_df['SPEED'].fillna(0).sum()
+                elif 'speed' in period_df.columns:
+                    speed_sum = period_df['speed'].fillna(0).sum()
+                total_speed += speed_sum
+                count += len(period_df) if not period_df.empty else 0
+            
+            avg_vehicles = total_vehicles / (days * (p['end_hour'] - p['start_hour'])) if count > 0 else 0
+            avg_speed = total_speed / total_vehicles if total_vehicles > 0 else 0
+            status = "畅通" if avg_speed > 50 else "拥堵" if avg_speed < 35 else "中度拥堵"
+            status_class = (
+                "bg-green-500/20 text-green-400" if status == "畅通" else
+                "bg-red-500/20 text-red-400" if status == "拥堵" else
+                "bg-orange-500/20 text-orange-400"
+            )
+            
+            result.append(PeriodStat(
+                name=p['name'],
+                timeRange=p['timeRange'],
+                avgVehicles=round(avg_vehicles),
+                avgSpeed=round(avg_speed, 1),
+                status=status,
+                statusClass=status_class
+            ))
+        
+        return PeriodStatsResponse(
+            success=True,
+            message=f"成功获取 {period} 的时间段统计数据",
+            data=convert_numpy_types(result)
+        )
+    except Exception as e:
+        logger.error(f"时间段统计查询失败: {str(e)}")
+        return PeriodStatsResponse(
+            success=False,
+            message=f"查询失败: {str(e)}",
+            data=[PeriodStat(
+                name=p['name'],
+                timeRange=p['timeRange'],
+                avgVehicles=0,
+                avgSpeed=0.0,
+                status="畅通",
+                statusClass="bg-green-500/20 text-green-400"
+            ) for p in periods]
+        )
