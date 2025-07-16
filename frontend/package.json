@@ -14,9 +14,12 @@
     "crypto-js": "^4.2.0",
     "echarts": "^5.4.0",
     "element-plus": "^2.4.0",
+    "face-api.js": "^0.22.2",
     "html2canvas": "^1.4.1",
     "pinia": "^2.1.0",
+    "resize-detector": "^0.3.0",
     "vue": "^3.4.0",
+    "vue-echarts": "^6.6.2",
     "vue-router": "^4.2.0"
   },
   "devDependencies": {

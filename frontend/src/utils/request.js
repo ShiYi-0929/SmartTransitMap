@@ -31,17 +31,19 @@ service.interceptors.request.use(
 service.interceptors.response.use(
   response => {
     // 对响应数据做点什么
-
-    // 针对 204 No Content 的情况，这是一个成功的响应，但不包含响应体。
-    // 直接返回 response，让 Promise 完成即可。
-    if (response.status === 204) {
-      return response;
-    }
-
     const res = response.data;
-    // 对于其他2xx的成功响应，直接返回数据部分。
-    // 之前的 `if (response.status !== 200)` 判断是错误的，因为它将201, 204等成功状态码误判为错误。
-    return res;
+    // 接受所有 2xx 状态码作为成功（如 DELETE 常用的 204 No Content）
+    if (response.status < 200 || response.status >= 300) {
+      ElNotification({
+        title: '错误',
+        message: res.message || 'Error',
+        type: 'error',
+        duration: 5 * 1000,
+      });
+      return Promise.reject(new Error(res.message || 'Error'));
+    } else {
+      return res;
+    }
   },
   error => {
     // 对响应错误做点什么

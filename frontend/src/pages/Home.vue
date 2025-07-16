@@ -99,7 +99,7 @@ const isInteractionLocked = computed(() => {
   // 锁定条件1：用户被降级
   if (store.isDemoted) return true;
   // 锁定条件2：普通用户认证已批准，等待重新登录
-  if (isNormalUser.value && store.faceAuthNotificationStatus === 'approved') return true;
+  if (isNormalUser.value && ['approved', 'rejected'].includes(store.faceAuthNotificationStatus)) return true;
   return false;
 });
 

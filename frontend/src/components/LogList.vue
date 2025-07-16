@@ -88,7 +88,6 @@ async function loadSystemLogs(query = '') {
   loading.value = true;
   try {
     const data = await getLogs(query);
-    // 后端返回的数据直接就是列表
     systemLogs.value = data;
   } catch (error) {
     ElMessage.error('加载系统日志失败');
@@ -98,14 +97,12 @@ async function loadSystemLogs(query = '') {
   }
 }
 
-// 侦听搜索框的变化
 watch(searchQuery, (newQuery) => {
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
     loadSystemLogs(newQuery);
-  }, 300); // 300毫秒防抖
+  }, 300);
 });
-
 
 function previewMedia(url, type) {
   mediaUrl.value = url;
@@ -120,12 +117,10 @@ async function handleDelete(logId) {
       cancelButtonText: '取消',
       type: 'warning',
     });
-    
+
     await deleteLog(logId);
     ElMessage.success('日志删除成功');
-    // 重新加载日志
     loadSystemLogs();
-
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error('删除失败');
@@ -134,7 +129,6 @@ async function handleDelete(logId) {
   }
 }
 
-// --- 新增：批量删除相关 ---
 function handleSelectionChange(val) {
   multipleSelection.value = val;
 }
@@ -158,10 +152,9 @@ async function handleBulkDelete() {
 
     const deletePromises = multipleSelection.value.map(log => deleteLog(log.id));
     await Promise.all(deletePromises);
-    
-    ElMessage.success('批量删除成功');
-    loadSystemLogs(); // 重新加载数据
 
+    ElMessage.success('批量删除成功');
+    loadSystemLogs();
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error('批量删除时发生错误');
@@ -184,7 +177,7 @@ async function submitEdit(){
      await updateLog(editingId.value, editDescription.value);
      ElMessage.success('更新成功');
      editDialogVisible.value=false;
-     loadSystemLogs(searchQuery.value); // 保持当前搜索
+     loadSystemLogs(searchQuery.value);
   }catch(e){
      ElMessage.error('更新失败');
   }
@@ -222,4 +215,4 @@ onMounted(() => {
   color: #409EFF;
 }
 .thumb{width:60px;height:40px;object-fit:cover;cursor:pointer;margin-right:6px;}
-</style> 
+</style>
