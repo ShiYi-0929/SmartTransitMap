@@ -1,13 +1,19 @@
 import axios from 'axios'
 
+// 配置axios默认超时时间
+axios.defaults.timeout = 60000; // 60秒超时，因为数据处理需要时间
+
+// 配置后端服务器地址
+const API_BASE_URL = 'http://localhost:8000';
+
 export function getTrafficStats(startTime, endTime, groupBy) {
-  return axios.get('/api/traffic/stats', { 
+  return axios.get(`${API_BASE_URL}/api/traffic/stats`, { 
     params: { start_time: startTime, end_time: endTime, group_by: groupBy } 
   })
 }
 
 export function getTrafficVisualization(startTime, endTime, viewType, vehicleId, mapStyle, limit = 5000) {
-  return axios.get('/api/traffic/visualization', { 
+  return axios.get(`${API_BASE_URL}/api/traffic/visualization`, { 
     params: { 
       start_time: startTime, 
       end_time: endTime, 
@@ -21,20 +27,20 @@ export function getTrafficVisualization(startTime, endTime, viewType, vehicleId,
 
 // 新增：获取数据文件信息
 export function getDataFilesInfo() {
-  return axios.get('/api/traffic/files/info')
+  return axios.get(`${API_BASE_URL}/api/traffic/files/info`)
 }
 
 // 新增：获取交通数据概要统计
 export function getTrafficSummary() {
-  return axios.get('/api/traffic/summary')
+  return axios.get(`${API_BASE_URL}/api/traffic/summary`)
 }
 
 export function getTrackData(params) {
-  return axios.get('/api/traffic/track', { params })
+  return axios.get(`${API_BASE_URL}/api/traffic/track`, { params })
 }
 
 export function getSampleVehicles(startTime, endTime, limit) {
-  return axios.get('/api/traffic/sample-vehicles', { 
+  return axios.get(`${API_BASE_URL}/api/traffic/sample-vehicles`, { 
     params: { 
       start_time: startTime, 
       end_time: endTime, 
@@ -44,13 +50,13 @@ export function getSampleVehicles(startTime, endTime, limit) {
 }
 
 export function getHeatmapData(startTime, endTime, resolution) {
-  return axios.get('/api/traffic/heatmap', { 
+  return axios.get(`${API_BASE_URL}/api/traffic/heatmap`, { 
     params: { start_time: startTime, end_time: endTime, resolution } 
   })
 }
 
 export function detectAnomalies(startTime, endTime, detectionTypes, thresholdParams) {
-  return axios.get('/api/traffic/anomaly/detection', { 
+  return axios.get(`${API_BASE_URL}/api/traffic/anomaly/detection`, { 
     params: { 
       start_time: startTime, 
       end_time: endTime, 
@@ -61,17 +67,17 @@ export function detectAnomalies(startTime, endTime, detectionTypes, thresholdPar
 }
 
 export function getRealtimeAnomalies(timeWindow, limit) {
-  return axios.get('/api/traffic/anomaly/realtime', { 
+  return axios.get(`${API_BASE_URL}/api/traffic/anomaly/realtime`, { 
     params: { time_window: timeWindow, limit } 
   })
 }
 
 export function getAnomalyTypes() {
-  return axios.get('/api/traffic/anomaly/types')
+  return axios.get(`${API_BASE_URL}/api/traffic/anomaly/types`)
 }
 
 export function getAnomalyHeatmap(startTime, endTime, anomalyType, resolution) {
-  return axios.get('/api/traffic/anomaly/heatmap', { 
+  return axios.get(`${API_BASE_URL}/api/traffic/anomaly/heatmap`, { 
     params: { 
       start_time: startTime, 
       end_time: endTime, 
@@ -82,7 +88,7 @@ export function getAnomalyHeatmap(startTime, endTime, anomalyType, resolution) {
 }
 
 export function getDynamicHeatmap(startTime, endTime, temporalResolution, spatialResolution, smoothing) {
-  return axios.get('/api/traffic/spatiotemporal/dynamic-heatmap', { 
+  return axios.get(`${API_BASE_URL}/api/traffic/spatiotemporal/dynamic-heatmap`, { 
     params: { 
       start_time: startTime, 
       end_time: endTime, 
@@ -94,56 +100,77 @@ export function getDynamicHeatmap(startTime, endTime, temporalResolution, spatia
 }
 
 export function performClustering(startTime, endTime, request) {
-  return axios.post('/api/traffic/spatiotemporal/clustering', request, { 
+  return axios.post(`${API_BASE_URL}/api/traffic/spatiotemporal/clustering`, request, { 
     params: { start_time: startTime, end_time: endTime } 
   })
 }
 
 export function performODAnalysis(startTime, endTime, request) {
-  return axios.post('/api/traffic/spatiotemporal/od-analysis', request, { 
+  return axios.post(`${API_BASE_URL}/api/traffic/spatiotemporal/od-analysis`, request, { 
     params: { start_time: startTime, end_time: endTime } 
   })
 }
 
 export function performComprehensiveAnalysis(startTime, endTime, heatmapRequest) {
-  return axios.post('/api/traffic/spatiotemporal/comprehensive', heatmapRequest, { 
+  return axios.post(`${API_BASE_URL}/api/traffic/spatiotemporal/comprehensive`, heatmapRequest, { 
     params: { start_time: startTime, end_time: endTime } 
   })
 }
 
 export function getAvailableAlgorithms() {
-  return axios.get('/api/traffic/spatiotemporal/algorithms')
+  return axios.get(`${API_BASE_URL}/api/traffic/spatiotemporal/algorithms`)
 }
 
 export function analyzeRoadSegments(request) {
-  return axios.post('/api/traffic/road/analysis', request)
+  return axios.post(`${API_BASE_URL}/api/traffic/road/analysis`, request)
 }
 
 export function performRoadAnalysis(config) {
-  return axios.post('/api/traffic/road/analysis', config)
+  return axios.post(`${API_BASE_URL}/api/traffic/road/analysis`, config)
 }
 
 export function getRoadSegments() {
-  return axios.get('/api/traffic/road/segments')
+  return axios.get(`${API_BASE_URL}/api/traffic/road/segments`)
 }
 
 export function getRoadTrafficData(timeRange) {
-  return axios.post('/api/traffic/road/traffic', timeRange)
+  return axios.post(`${API_BASE_URL}/api/traffic/road/traffic`, timeRange)
 }
 
 export function getRoadVisualizationData(request) {
-  return axios.post('/api/traffic/road/visualization', request)
+  return axios.post(`${API_BASE_URL}/api/traffic/road/visualization`, request)
 }
 
 export function getRoadNetworkMetrics() {
-  return axios.get('/api/traffic/road/metrics')
+  return axios.get(`${API_BASE_URL}/api/traffic/road/metrics`)
 }
 
 export function getWeeklyPassengerFlowAnalysis(startTime, endTime) {
-  return axios.get('/api/traffic/weekly-passenger-flow', { 
+  return axios.get(`${API_BASE_URL}/api/traffic/weekly-passenger-flow`, { 
     params: { start_time: startTime, end_time: endTime } 
   })
 }
+
+// 交通日志相关API
+export function getTrafficLogs(params = {}) {
+  return axios.get(`${API_BASE_URL}/api/traffic/logs`, { params })
+}
+
+export function getTrafficLogStats() {
+  return axios.get(`${API_BASE_URL}/api/traffic/logs/stats`)
+}
+
+export function clearTrafficLogs() {
+  return axios.delete(`${API_BASE_URL}/api/traffic/logs`)
+}
+
+export function addTrafficLog(logData) {
+  return axios.post(`${API_BASE_URL}/api/traffic/logs`, logData)
+}
+
+export function sendTrafficAlert(message) {
+  return axios.post(`${API_BASE_URL}/api/traffic/alert`, { message })
+} 
 
 // 路程分析API - 使用高级版API路径
 export const roadAPI = {
@@ -179,7 +206,7 @@ export const roadAPI = {
       endTime = 1379548799    // 2013-09-18 23:59:59 UTC
     }
     
-    return axios.post(`/api/traffic/road/trip-analysis?start_time=${startTime}&end_time=${endTime}`, config)
+    return axios.post(`${API_BASE_URL}/api/traffic/road/trip-analysis?start_time=${startTime}&end_time=${endTime}`, config)
   },
   
   orderSpeedAnalysis(config) {
@@ -187,7 +214,60 @@ export const roadAPI = {
     const startTime = 1378944000  // 2013-09-12 00:00:00 UTC
     const endTime = 1379548799    // 2013-09-18 23:59:59 UTC
     
-    return axios.post(`/api/traffic/road/order-speed-analysis?start_time=${startTime}&end_time=${endTime}`, config)
+    // 添加详细的调试信息
+    console.log('=== API orderSpeedAnalysis 调用 ===')
+    console.log('请求配置:', JSON.stringify(config, null, 2))
+    console.log('时间范围:', { startTime, endTime })
+    
+    const url = `${API_BASE_URL}/api/traffic/road/order-speed-analysis?start_time=${startTime}&end_time=${endTime}`
+    console.log('请求URL:', url)
+    console.log('请求方法: POST')
+    console.log('请求体:', JSON.stringify(config, null, 2))
+    
+    // 发送请求前的额外检查
+    console.log('axios对象:', axios)
+    console.log('当前时间:', new Date().toISOString())
+    
+    // 为此API设置更长的超时时间
+    const requestConfig = {
+      timeout: 120000, // 2分钟超时
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    }
+    
+    return axios.post(url, config, requestConfig)
+      .then(response => {
+        console.log('=== API 响应成功 ===')
+        console.log('响应状态:', response.status)
+        console.log('响应头:', response.headers)
+        console.log('响应数据:', response.data)
+        console.log('响应数据类型:', typeof response.data)
+        return response
+      })
+      .catch(error => {
+        console.error('=== API 请求失败 ===')
+        console.error('错误类型:', error.constructor.name)
+        console.error('错误消息:', error.message)
+        
+        if (error.response) {
+          console.error('HTTP错误响应:')
+          console.error('  状态码:', error.response.status)
+          console.error('  状态文本:', error.response.statusText)
+          console.error('  响应头:', error.response.headers)
+          console.error('  响应数据:', error.response.data)
+        } else if (error.request) {
+          console.error('网络请求错误:')
+          console.error('  请求对象:', error.request)
+          console.error('  请求状态:', error.request.readyState)
+          console.error('  请求URL:', error.request.responseURL)
+          console.error('  请求超时:', error.code === 'ECONNABORTED' ? '是' : '否')
+        } else {
+          console.error('配置错误:', error.message)
+        }
+        
+        throw error
+      })
   },
   
   comprehensiveAnalysis(config) {
