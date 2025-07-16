@@ -323,6 +323,10 @@ const updateChart = async () => {
 const handlePeriodChange = async (period) => {
   console.log('切换时间周期:', period);
   selectedPeriod.value = period;
+  errorMessage.value = '';
+  if (period === 'week') {
+    selectedDate.value = '2013-09-12'; // 自动重置为唯一合法周起点
+  }
   await fetchData();
 };
 

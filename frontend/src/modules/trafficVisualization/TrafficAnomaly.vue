@@ -9,8 +9,8 @@
               <AlertTriangleIcon class="w-8 h-8 text-red-400" />
             </div>
             <div>
-              <h2 class="text-2xl font-bold text-white mb-1">异常数据侦测与可视化</h2>
-              <p class="text-gray-300">智能识别交通异常事件，支持实时监控和历史分析</p>
+              <h2 class="text-2xl font-bold text-white mb-1">交通异常检测与可视化</h2>
+              <p class="text-gray-300">基于真实GPS数据的智能异常事件识别与分析</p>
             </div>
           </div>
           <div class="flex items-center space-x-6">
@@ -23,8 +23,8 @@
               <div class="text-sm text-gray-300">高危异常</div>
             </div>
             <div class="text-center">
-              <div class="text-3xl font-bold text-green-400">{{ isRealTimeMode ? '实时' : '历史' }}</div>
-              <div class="text-sm text-gray-300">监控模式</div>
+              <div class="text-3xl font-bold text-green-400">{{ isRealTimeMode ? '历史' : '历史' }}</div>
+              <div class="text-sm text-gray-300">检测模式</div>
             </div>
           </div>
         </div>
@@ -48,7 +48,7 @@
                 type="checkbox" 
                 class="mr-2 rounded bg-blue-900/50 border-blue-500/50 text-blue-500"
               />
-              <span class="text-white">实时监控模式</span>
+              <span class="text-white">历史监控模式</span>
             </label>
           </div>
         </div>
@@ -235,14 +235,6 @@
               异常事件地图
             </h3>
             <div class="flex items-center space-x-2">
-              <label class="flex items-center text-sm text-gray-300">
-                <input 
-                  v-model="showHeatmap" 
-                  type="checkbox" 
-                  class="mr-2 rounded bg-blue-900/50 border-blue-500/50 text-blue-500"
-                />
-                热力图模式
-              </label>
               <select 
                 v-model="selectedAnomalyTypeFilter"
                 class="px-3 py-1 bg-blue-900/50 border border-blue-500/50 rounded text-white text-sm"
@@ -470,7 +462,7 @@ const showHeatmap = ref(false)
 const selectedAnomalyTypeFilter = ref('all')
 const sortBy = ref('timestamp')
 
-// 时间限制
+// 时间限制 - 基于真实数据的时间范围
 const minDate = "2013-09-12T00:00"
 const maxDate = "2013-09-18T23:59"
 
@@ -485,7 +477,7 @@ const detectionParams = ref({
 // 阈值配置
 const thresholds = ref({
   long_stop_duration_minutes: 5,
-  speed_threshold_low: 5,
+  speed_threshold_low: 0,
   speed_threshold_high: 80,
   cluster_density: 50
 })
@@ -514,7 +506,7 @@ async function initMap() {
   }
   
   map = new window.AMap.Map(mapContainerId, {
-    center: [117.120, 36.651],
+    center: [117.120, 36.651], // 济南市中心
     zoom: 11,
     mapStyle: 'amap://styles/dark'
   })
@@ -555,6 +547,13 @@ async function loadAnomalyTypes() {
     }
   } catch (error) {
     console.error('加载异常类型失败:', error)
+    // 使用默认异常类型
+    anomalyTypes.value = [
+      { type: 'long_stop', name: '长时间停车' },
+      { type: 'speed_anomaly', name: '速度异常' },
+      { type: 'cluster_anomaly', name: '异常聚集' },
+      { type: 'abnormal_route', name: '异常绕路' }
+    ]
   }
 }
 
@@ -585,42 +584,59 @@ async function startDetection() {
 }
 
 async function detectRealtimeAnomalies() {
-  const response = await getRealtimeAnomalies(3600, 100)
-  
-  if (response.data.success) {
-    anomalies.value = response.data.anomalies
-    updateStatistics()
-    displayAnomaliesOnMap()
+  try {
+    const response = await getRealtimeAnomalies(3600, 100)
+    
+    if (response.data.success) {
+      anomalies.value = response.data.anomalies
+      updateStatistics()
+      displayAnomaliesOnMap()
+    }
+  } catch (error) {
+    console.error('历史异常检测失败:', error)
   }
 }
 
 async function detectHistoricalAnomalies() {
-  // 转换时间为时间戳
-  const startTimestamp = new Date(detectionParams.value.startTime).getTime() / 1000
-  const endTimestamp = new Date(detectionParams.value.endTime).getTime() / 1000
-  
-  // 确定检测类型
-  let detectionTypes = 'all'
-  if (!detectionParams.value.detectAll && detectionParams.value.selectedTypes.length > 0) {
-    detectionTypes = detectionParams.value.selectedTypes.join(',')
-  }
-  
-  // 准备阈值参数
-  const thresholdParams = {
-    long_stop_duration: thresholds.value.long_stop_duration_minutes * 60,
-    speed_threshold_low: thresholds.value.speed_threshold_low,
-    speed_threshold_high: thresholds.value.speed_threshold_high,
-    cluster_density: thresholds.value.cluster_density
-  }
-  
-  const response = await detectAnomalies(startTimestamp, endTimestamp, detectionTypes, thresholdParams)
-  
-  if (response.data.success) {
-    anomalies.value = response.data.anomalies
-    statistics.value = response.data.statistics
-    displayAnomaliesOnMap()
-  } else {
-    alert(response.data.message || '检测失败')
+  try {
+    // 转换时间为时间戳
+    const startTimestamp = new Date(detectionParams.value.startTime).getTime() / 1000
+    const endTimestamp = new Date(detectionParams.value.endTime).getTime() / 1000
+    
+    // 确定检测类型
+    let detectionTypes = 'all'
+    if (!detectionParams.value.detectAll && detectionParams.value.selectedTypes.length > 0) {
+      detectionTypes = detectionParams.value.selectedTypes.join(',')
+    }
+    
+    // 准备阈值参数
+    const thresholdParams = {
+      long_stop_duration: thresholds.value.long_stop_duration_minutes * 60,
+      speed_threshold_low: thresholds.value.speed_threshold_low,
+      speed_threshold_high: thresholds.value.speed_threshold_high,
+      cluster_density: thresholds.value.cluster_density
+    }
+    
+    console.log('开始异常检测:', {
+      startTimestamp,
+      endTimestamp,
+      detectionTypes,
+      thresholdParams
+    })
+    
+    const response = await detectAnomalies(startTimestamp, endTimestamp, detectionTypes, thresholdParams)
+    
+    if (response.data.success) {
+      anomalies.value = response.data.anomalies
+      statistics.value = response.data.statistics
+      displayAnomaliesOnMap()
+      console.log('异常检测完成:', response.data)
+    } else {
+      alert(response.data.message || '检测失败')
+    }
+  } catch (error) {
+    console.error('历史异常检测失败:', error)
+    alert('检测失败: ' + error.message)
   }
 }
 
@@ -924,7 +940,7 @@ onUnmounted(() => {
     map.destroy()
   }
 })
-</script> 
+</script>
 
 <style scoped>
 .anomaly-detection-container {

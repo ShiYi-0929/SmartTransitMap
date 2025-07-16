@@ -50,7 +50,7 @@
           <div v-if="sampleVehicles.length > 0" class="mt-2">
             <select 
               v-model="selectedSampleVehicle" 
-              @change="selectSampleVehicle($event.target.value)" 
+              @change="selectSampleVehicle($event.target.value)"
               class="input-tech text-sm"
             >
               <option value="">选择示例车辆...</option>
@@ -259,7 +259,6 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Route, Search, X, Play, Download } from 'lucide-vue-next'
 import { getTrackData, getSampleVehicles } from '@/api/traffic'
-import mapAPIManager from '@/utils/mapManager.js'
 
 // 响应式数据
 const loading = ref(false)
@@ -334,7 +333,7 @@ const trackStats = computed(() => {
 async function initMap() {
   try {
     // 使用全局管理器加载API
-    await mapAPIManager.loadAPI()
+    // await mapAPIManager.loadAPI() // 删除全局管理器加载
     
     // 如果地图已存在，先清理
     if (map) {

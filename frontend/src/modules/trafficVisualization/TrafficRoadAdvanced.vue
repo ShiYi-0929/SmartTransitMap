@@ -2,8 +2,8 @@
     <div class="road-analysis-advanced">
       <!-- 标题栏 -->
       <div class="analysis-header">
-        <h2>路段智能分析</h2>
-        <p class="subtitle">路程分析 | 订单速度分析</p>
+        <h2>路程智能分析</h2>
+        <p class="subtitle">路程分析</p>
       </div>
   
       <!-- 功能选择面板 -->
@@ -15,13 +15,7 @@
         >
           📊 路程分析
         </div>
-        <div 
-          class="tab-item"
-          :class="{ active: activeTab === 'speed' }"
-          @click="switchTab('speed')"
-        >
-          🚗 订单速度分析
-        </div>
+        <!-- 删除订单速度分析tab -->
       </div>
   
       <!-- 路程分析面板 -->
@@ -31,8 +25,6 @@
             <div class="control-group">
               <label>分析日期:</label>
               <select v-model="tripConfig.selected_date">
-                <option value="all">全部日期</option>
-                <option value="2013-09-11">2013年9月11日</option>
                 <option value="2013-09-12">2013年9月12日</option>
                 <option value="2013-09-13">2013年9月13日</option>
                 <option value="2013-09-14">2013年9月14日</option>
@@ -47,9 +39,38 @@
               <input type="number" v-model.number="tripConfig.min_trip_count" min="5" max="100">
             </div>
             <div class="control-group">
-              <button @click="performTripAnalysis" :disabled="isLoading" class="analyze-btn">
+              <button 
+                @click="performTripAnalysis" 
+                :disabled="isLoading" 
+                class="analyze-btn"
+              >
                 {{ isLoading ? '分析中...' : '开始路程分析' }}
               </button>
+            </div>
+          </div>
+        </div>
+  
+        <!-- 提示信息 -->
+        <div v-if="!tripAnalysisData" class="analysis-prompt">
+          <div class="prompt-content">
+            <h3>📊 智能路程分析</h3>
+            <p>请选择分析日期，然后点击"开始路程分析"按钮开始分析</p>
+            <div class="data-info">
+              <p><strong>📅 可用数据范围：</strong>2013年9月12日 - 2013年9月18日</p>
+            </div>
+            <div class="prompt-steps">
+              <div class="step">
+                <span class="step-number">1</span>
+                <span class="step-text">选择分析日期</span>
+              </div>
+              <div class="step">
+                <span class="step-number">2</span>
+                <span class="step-text">调整最小订单数参数（可选）</span>
+              </div>
+              <div class="step">
+                <span class="step-number">3</span>
+                <span class="step-text">点击"开始路程分析"按钮</span>
+              </div>
             </div>
           </div>
         </div>
@@ -83,164 +104,22 @@
           <!-- 路程分布图表 -->
           <div class="chart-section">
             <h3>路程分布图表 
-              <span v-if="tripConfig.selected_date !== 'all'" class="date-indicator">
+              <span class="date-indicator">
                 ({{ formatSelectedDate(tripConfig.selected_date) }})
               </span>
-              <span v-else class="date-indicator">(全部日期)</span>
             </h3>
             <div class="chart-container">
               <canvas ref="tripChartCanvas" class="trip-chart" width="600" height="400"></canvas>
             </div>
           </div>
   
-          <!-- 日期明细表 -->
-          <div class="daily-breakdown" v-if="tripAnalysisData.daily_classifications">
-            <h3>日期明细 
-              <span v-if="tripConfig.selected_date !== 'all'" class="date-indicator">
-                ({{ formatSelectedDate(tripConfig.selected_date) }})
-              </span>
-              <span v-else class="date-indicator">(全部日期)</span>
-            </h3>
-            <div class="table-container">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>日期</th>
-                    <th>短途订单</th>
-                    <th>中途订单</th>
-                    <th>长途订单</th>
-                    <th>总订单</th>
-                    <th>平均距离</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-if="filteredDailyClassifications.length === 0">
-                    <td colspan="6" class="no-data">
-                      {{ tripAnalysisData ? '没有匹配的数据' : '请点击"开始路程分析"按钮进行分析' }}
-                    </td>
-                  </tr>
-                  <tr v-for="day in filteredDailyClassifications" :key="day.date">
-                    <td>{{ day.date }}</td>
-                    <td>{{ day.short_trips }} ({{ (day.short_percentage || 0).toFixed(1) }}%)</td>
-                    <td>{{ day.medium_trips }} ({{ (day.medium_percentage || 0).toFixed(1) }}%)</td>
-                    <td>{{ day.long_trips }} ({{ (day.long_percentage || 0).toFixed(1) }}%)</td>
-                    <td>{{ day.total_trips }}</td>
-                    <td>{{ (day.avg_distance || 0).toFixed(2) }}km</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+
         </div>
       </div>
   
-      <!-- 订单速度分析面板 -->
-      <div v-if="activeTab === 'speed'" class="analysis-content">
-        <div class="control-panel">
-          <div class="panel-row">
-            <div class="control-group">
-              <label>分析范围:</label>
-              <select v-model="speedConfig.include_short_medium_only" @change="onSpeedConfigChange">
-                <option :value="true">仅中短途订单(≤8km)</option>
-                <option :value="false">全部订单</option>
-              </select>
-            </div>
-            <div class="control-group">
-              <label>空间分辨率:</label>
-              <select v-model="speedConfig.spatial_resolution" @change="onSpeedConfigChange">
-                <option value="0.001">高精度(100m)</option>
-                <option value="0.005">中等(500m)</option>
-                <option value="0.01">低精度(1km)</option>
-              </select>
-            </div>
-            <div class="control-group">
-              <label>最小订单数:</label>
-              <input type="number" v-model.number="speedConfig.min_orders_per_location" min="3" max="20">
-            </div>
-            <div class="control-group">
-              <button @click="performSpeedAnalysis" :disabled="isLoading" class="analyze-btn">
-                {{ isLoading ? '分析中...' : '开始速度分析' }}
-              </button>
-            </div>
-          </div>
-        </div>
+      <!-- 删除订单速度分析面板及相关内容 -->
   
-        <!-- 速度分析结果 -->
-        <div v-if="speedAnalysisData" class="speed-results">
-          <!-- 拥堵统计卡片 -->
-          <div class="stats-cards">
-            <div class="stat-card congestion-free">
-              <div class="stat-value">{{ congestionStats.freeCount }}</div>
-              <div class="stat-label">畅通区域</div>
-              <div class="stat-extra">>40km/h</div>
-            </div>
-            <div class="stat-card congestion-moderate">
-              <div class="stat-value">{{ congestionStats.moderateCount }}</div>
-              <div class="stat-label">缓慢区域</div>
-              <div class="stat-extra">25-40km/h</div>
-            </div>
-            <div class="stat-card congestion-heavy">
-              <div class="stat-value">{{ congestionStats.heavyCount }}</div>
-              <div class="stat-label">拥堵区域</div>
-              <div class="stat-extra">15-25km/h</div>
-            </div>
-            <div class="stat-card congestion-jam">
-              <div class="stat-value">{{ congestionStats.jamCount }}</div>
-              <div class="stat-label">严重拥堵</div>
-              <div class="stat-extra"><15km/h</div>
-            </div>
-          </div>
-  
-          <!-- 速度热力图 -->
-          <div class="map-section">
-            <h3>道路速度热力图</h3>
-            <div class="map-container">
-              <div class="speed-map">
-                <canvas ref="speedHeatmapCanvas" class="heatmap-canvas" width="800" height="600"></canvas>
-              </div>
-              <div class="heatmap-legend">
-                <div class="legend-item free">畅通</div>
-                <div class="legend-item moderate">缓慢</div>
-                <div class="legend-item heavy">拥堵</div>
-                <div class="legend-item jam">严重拥堵</div>
-              </div>
-            </div>
-          </div>
-  
-          <!-- 拥堵区域详情 -->
-          <div class="congestion-details">
-            <h3>拥堵区域详情</h3>
-            <div class="table-container">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>位置</th>
-                    <th>平均速度</th>
-                    <th>订单数量</th>
-                    <th>拥堵等级</th>
-                    <th>置信度</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(area, index) in topCongestionAreas" :key="index">
-                    <td>{{ formatLocation(area.location) }}</td>
-                    <td>{{ area.avg_speed.toFixed(1) }}km/h</td>
-                    <td>{{ area.order_count }}</td>
-                    <td>
-                      <span :class="'congestion-' + area.congestion_level">
-                        {{ getCongestionLabel(area.congestion_level) }}
-                      </span>
-                    </td>
-                    <td>{{ (area.confidence_score * 100).toFixed(0) }}%</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-  
-      <!-- 综合分析面板 -->
+      <!-- 综合分析面板（如有速度相关内容也一并删除） -->
       <div v-if="activeTab === 'comprehensive'" class="analysis-content">
         <div class="control-panel">
           <div class="panel-row">
@@ -300,7 +179,8 @@
   </template>
   
   <script>
-  import { roadAPI } from '../../api/traffic'
+  import { ref, onMounted, nextTick, watch } from 'vue'
+import { roadAPI } from '@/api/traffic'
   
   export default {
     name: 'TrafficRoadAdvanced',
@@ -308,25 +188,26 @@
       return {
         isLoading: false,
         loadingMessage: '分析中...',
+        loadingProgress: 0,
         activeTab: 'trip',
         
         // 路程分析配置
         tripConfig: {
           min_trip_count: 10,
-          selected_date: 'all'
+          selected_date: '2013-09-12'
         },
         
-        // 速度分析配置（保持不变）
-        speedConfig: {
-          speed_analysis_type: 'comprehensive',
-          include_short_medium_only: true,
-          spatial_resolution: 0.005,
-          min_orders_per_location: 5
+        // 分析配置
+        analysisConfig: {
+          time_window: 60,
+          min_speed: 5,
+          max_speed: 120,
+          grid_size: 0.001,
+          analysis_type: 'comprehensive'
         },
         
         // 分析数据
         tripAnalysisData: null,
-        speedAnalysisData: null,
         comprehensiveData: null
       }
     },
@@ -347,8 +228,8 @@
           }
         }
         
-        // 如果选择了特定日期，优先显示该日期的数据
-        if (this.tripConfig.selected_date !== 'all' && this.tripAnalysisData.daily_classifications) {
+        // 显示选中日期的数据
+        if (this.tripAnalysisData.daily_classifications) {
           const selectedDayData = this.tripAnalysisData.daily_classifications.find(
             day => day.date === this.tripConfig.selected_date
           )
@@ -381,60 +262,22 @@
         }
       },
       
-      // 拥堵统计
-      congestionStats() {
-        if (!this.speedAnalysisData?.speed_data) return {
-          freeCount: 0,
-          moderateCount: 0,
-          heavyCount: 0,
-          jamCount: 0
-        }
-        
-        const data = this.speedAnalysisData.speed_data
-        const counts = { free: 0, moderate: 0, heavy: 0, jam: 0 }
-        
-        data.forEach(item => {
-          counts[item.congestion_level] = (counts[item.congestion_level] || 0) + 1
-        })
-        
-        return {
-          freeCount: counts.free,
-          moderateCount: counts.moderate,
-          heavyCount: counts.heavy,
-          jamCount: counts.jam
-        }
-      },
-      
-      // 前十拥堵区域
-      topCongestionAreas() {
-        if (!this.speedAnalysisData?.speed_data) return []
-        return this.speedAnalysisData.speed_data
-          .filter(item => item.congestion_level === 'heavy' || item.congestion_level === 'jam')
-          .sort((a, b) => a.avg_speed - b.avg_speed)
-          .slice(0, 10)
-      },
-      
       // 过滤后的日期分类数据
       filteredDailyClassifications() {
         if (!this.tripAnalysisData?.daily_classifications) {
           return []
         }
         
-        // 如果选择了特定日期，只显示该日期的数据
-        if (this.tripConfig.selected_date !== 'all') {
+        // 只显示选中日期的数据
           const filtered = this.tripAnalysisData.daily_classifications.filter(
             day => day.date === this.tripConfig.selected_date
           )
           return filtered
-        }
-        
-        // 否则显示所有日期的数据
-        return this.tripAnalysisData.daily_classifications
       },
       
       // 是否有任何数据
       hasAnyData() {
-        return this.tripAnalysisData || this.speedAnalysisData || this.comprehensiveData
+        return this.tripAnalysisData || this.comprehensiveData
       },
       
       // 综合分析计算属性
@@ -451,47 +294,52 @@
       
       avgTripDistance() {
         return this.tripStats.avgDistance || '0.00'
-      },
-      
-      avgRoadSpeed() {
-        if (!this.speedAnalysisData?.congestion_summary) return '0.0'
-        return (this.speedAnalysisData.congestion_summary.overall_avg_speed || 0).toFixed(1)
-      },
-      
-      overallCongestionLevel() {
-        const stats = this.congestionStats
-        const total = stats.freeCount + stats.moderateCount + stats.heavyCount + stats.jamCount
-        if (total === 0) return '无数据'
-        
-        const jamRate = stats.jamCount / total
-        const heavyRate = stats.heavyCount / total
-        
-        if (jamRate > 0.3) return '严重拥堵'
-        if (heavyRate + jamRate > 0.5) return '拥堵'
-        if (stats.moderateCount / total > 0.5) return '缓慢'
-        return '畅通'
       }
     },
     
     mounted() {
       this.initializeComponent()
     },
+
+    // 使用 watch 监听地图和热力图数据，自动渲染热力图
+    watch: {
+      // 监听地图实例和热力图数据
+      speedMap: {
+        handler(newMap) {
+          if (newMap && this.speedAnalysisData?.heatmap_data?.length > 0) {
+            console.log('🎯 地图实例已准备好，自动渲染热力图')
+            this.updateSpeedHeatmapOnMap()
+          }
+        },
+        immediate: false
+      },
+      // 监听热力图数据变化
+      'speedAnalysisData.heatmap_data': {
+        handler(newData) {
+          if (this.speedMap && newData && newData.length > 0) {
+            console.log('🎯 热力图数据已准备好，自动渲染热力图')
+            this.updateSpeedHeatmapOnMap()
+          }
+        },
+        immediate: false
+      }
+    },
+    
+    beforeUnmount() {
+      // 清理地图资源
+      this.cleanupMap()
+    },
     
     methods: {
       initializeComponent() {
-        // 默认执行路程分析
-        this.performTripAnalysis()
+        // 初始化组件，但不自动执行分析
+        console.log('智能路程分析组件已初始化，请选择日期并点击"开始路程分析"按钮')
       },
       
       switchTab(tab) {
         this.activeTab = tab
-        if (tab === 'trip' && !this.tripAnalysisData) {
-          this.performTripAnalysis()
-        } else if (tab === 'speed' && !this.speedAnalysisData) {
-          this.performSpeedAnalysis()
-        } else if (tab === 'comprehensive' && !this.comprehensiveData) {
-          this.performComprehensiveAnalysis()
-        }
+        // 切换标签页时不自动执行分析，需要用户手动点击按钮
+        console.log(`已切换到${tab === 'trip' ? '路程分析' : '综合分析'}标签页`)
       },
       
       async performTripAnalysis() {
@@ -534,34 +382,6 @@
         }
       },
       
-      async performSpeedAnalysis() {
-        try {
-          this.isLoading = true
-          this.loadingMessage = '正在分析订单速度...'
-          
-          const response = await roadAPI.orderSpeedAnalysis(this.speedConfig)
-          this.speedAnalysisData = response.speed_analysis
-          
-          // 绘制图表和热力图
-          this.$nextTick(() => {
-            this.drawSpeedHeatmap()
-          })
-          
-        } catch (error) {
-          console.error('速度分析失败:', error)
-          // 兼容不同的消息提示方式
-          if (this.$message?.error) {
-            this.$message.error('速度分析失败，请重试')
-          } else if (this.$notify) {
-            this.$notify.error({ title: '错误', message: '速度分析失败，请重试' })
-          } else {
-            alert('速度分析失败，请重试')
-          }
-        } finally {
-          this.isLoading = false
-        }
-      },
-      
       async performComprehensiveAnalysis() {
         try {
           this.isLoading = true
@@ -570,13 +390,13 @@
           // 并行执行两个分析
           await Promise.all([
             this.tripAnalysisData ? Promise.resolve() : this.performTripAnalysis(),
-            this.speedAnalysisData ? Promise.resolve() : this.performSpeedAnalysis()
+            // this.speedAnalysisData ? Promise.resolve() : this.performSpeedAnalysis() // 删除速度分析
           ])
           
           // 生成综合数据
           this.comprehensiveData = {
             tripData: this.tripAnalysisData,
-            speedData: this.speedAnalysisData,
+            // speedData: this.speedAnalysisData, // 删除速度分析
             timestamp: Date.now()
           }
           
@@ -598,13 +418,6 @@
       onTripConfigChange() {
         // 配置变更时不再自动分析，需要手动点击按钮
         console.log('配置已更改，请点击"开始路程分析"按钮重新分析')
-      },
-      
-      onSpeedConfigChange() {
-        // 配置变更时重新分析
-        if (this.speedAnalysisData) {
-          this.performSpeedAnalysis()
-        }
       },
       
       drawTripChart() {
@@ -653,51 +466,6 @@
         })
       },
       
-      drawSpeedHeatmap() {
-        const canvas = this.$refs.speedHeatmapCanvas
-        if (!canvas || !this.speedAnalysisData) return
-        
-        const ctx = canvas.getContext('2d')
-        ctx.clearRect(0, 0, canvas.width, canvas.height)
-        
-        // 绘制背景
-        ctx.fillStyle = '#f8f9fa'
-        ctx.fillRect(0, 0, canvas.width, canvas.height)
-        
-        // 绘制标题
-        ctx.fillStyle = '#333'
-        ctx.font = 'bold 16px Arial'
-        ctx.textAlign = 'center'
-        ctx.fillText('道路速度分布热力图', canvas.width / 2, 30)
-        
-        // 绘制热力点（真实数据）
-        if (this.speedAnalysisData.heatmap_data && this.speedAnalysisData.heatmap_data.length > 0) {
-          this.speedAnalysisData.heatmap_data.forEach(point => {
-            // 使用真实的坐标数据或根据实际需求进行坐标映射
-            const x = point.x || (Math.random() * (canvas.width - 100) + 50)
-            const y = point.y || (Math.random() * (canvas.height - 100) + 50)
-            
-            const colors = {
-              free: '#4CAF50',
-              moderate: '#FFC107', 
-              heavy: '#FF5722',
-              jam: '#F44336'
-            }
-            
-            ctx.fillStyle = colors[point.congestion_level] || '#999'
-            ctx.beginPath()
-            ctx.arc(x, y, 8, 0, 2 * Math.PI)
-            ctx.fill()
-          })
-        } else {
-          // 如果没有热力图数据，显示提示信息
-          ctx.fillStyle = '#666'
-          ctx.font = '16px Arial'
-          ctx.textAlign = 'center'
-          ctx.fillText('暂无热力图数据', canvas.width / 2, canvas.height / 2)
-        }
-      },
-      
       formatLocation(location) {
         return `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}`
       },
@@ -729,7 +497,7 @@
       exportAllData() {
         const data = {
           tripAnalysis: this.tripAnalysisData,
-          speedAnalysis: this.speedAnalysisData,
+          // speedAnalysis: this.speedAnalysisData, // 删除速度分析
           comprehensive: this.comprehensiveData,
           exportTime: new Date().toISOString()
         }
@@ -741,7 +509,225 @@
         a.download = `road_analysis_${Date.now()}.json`
         a.click()
         URL.revokeObjectURL(url)
-      }
+      },
+
+             // 新增：带重试机制的地图初始化（只负责底图显示）
+       async initializeMapWithRetry(maxRetries = 3) {
+         for (let attempt = 1; attempt <= maxRetries; attempt++) {
+           console.log(`🔄 地图初始化尝试 ${attempt}/${maxRetries}`)
+           
+           try {
+             await this.initializeMap()
+             if (this.speedMap) {
+               console.log('✅ 地图底图初始化成功，等待热力图数据...')
+               return
+             }
+           } catch (error) {
+             console.warn(`❌ 地图初始化尝试 ${attempt} 失败:`, error)
+           }
+           
+           // 如果不是最后一次尝试，等待后重试
+           if (attempt < maxRetries) {
+             console.log(`⏳ 等待 ${attempt * 1000}ms 后重试...`)
+             await new Promise(resolve => setTimeout(resolve, attempt * 1000))
+           }
+         }
+         
+         console.error('❌ 地图初始化失败，已达到最大重试次数')
+       },
+
+       // 新增：地图组件初始化方法（只负责底图显示）
+       async initializeMap() {
+         console.log('🗺️ 开始初始化地图底图...')
+         console.log('地图容器ID:', this.speedMapContainerId)
+         console.log('地图容器元素:', document.getElementById(this.speedMapContainerId))
+         console.log('容器尺寸:', document.getElementById(this.speedMapContainerId)?.getBoundingClientRect())
+         
+         try {
+           // 使用统一的地图API管理器
+           console.log('📡 加载地图API...')
+           // 检查地图容器是否存在并且有尺寸
+           const mapContainer = document.getElementById(this.speedMapContainerId)
+           if (!mapContainer) {
+             throw new Error(`地图容器不存在: ${this.speedMapContainerId}`)
+           }
+           
+           // 检查容器尺寸
+           const containerRect = mapContainer.getBoundingClientRect()
+           console.log('地图容器尺寸:', containerRect)
+           
+           if (containerRect.width === 0 || containerRect.height === 0) {
+             throw new Error(`地图容器尺寸异常: ${containerRect.width}x${containerRect.height}`)
+           }
+           
+           // 如果地图已存在，先清理
+           if (this.speedMap) {
+             console.log('🧹 清理现有地图实例')
+             this.speedMap.destroy()
+             this.speedMap = null
+             this.speedMapInitialized = false
+           }
+
+           // 创建地图实例
+           console.log('🏗️ 创建地图实例...')
+           this.speedMap = new window.AMap.Map(this.speedMapContainerId, {
+             zoom: 11, // 初始缩放级别
+             center: [117.120, 36.651], // 济南市中心
+             mapStyle: 'amap://styles/blue', // 地图样式
+             zooms: [3, 20] // 缩放级别范围
+           })
+           
+           console.log('📍 地图实例创建成功:', this.speedMap)
+
+           // 等待地图加载完成
+           await new Promise((resolve, reject) => {
+             const timeout = setTimeout(() => {
+               reject(new Error('地图加载超时'))
+             }, 10000) // 10秒超时
+             
+             this.speedMap.on('complete', () => {
+               clearTimeout(timeout)
+               this.speedMapInitialized = true
+               console.log('✅ 地图底图加载完成，watch 会自动处理热力图')
+               resolve()
+             })
+           })
+
+           // 添加基础控件
+           this.speedMap.plugin(['AMap.Scale', 'AMap.ToolBar'], () => {
+             this.speedMap.addControl(new window.AMap.Scale());
+             this.speedMap.addControl(new window.AMap.ToolBar());
+           });
+           
+         } catch (error) {
+           console.error('❌ 地图底图初始化失败:', error)
+           console.error('错误堆栈:', error.stack)
+           // 清理失败的地图实例
+           if (this.speedMap) {
+             try {
+               this.speedMap.destroy()
+             } catch (e) {
+               console.warn('清理失败的地图实例时出错:', e)
+             }
+             this.speedMap = null
+           }
+           this.speedMapInitialized = false
+           throw error // 重新抛出错误，让重试机制处理
+         }
+       },
+
+        // 注意：waitForMapAndUpdateHeatmap 方法已被 watch 替代，不再需要
+
+        // 新增：更新地图上的速度热力图
+        updateSpeedHeatmapOnMap() {
+         console.log('🔥 开始渲染热力图到地图上...')
+         console.log('地图实例:', this.speedMap)
+         console.log('热力图数据点数:', this.speedAnalysisData?.heatmap_data?.length)
+         
+         if (!this.speedMap || !this.speedAnalysisData?.heatmap_data) {
+           console.warn('❌ 热力图渲染失败：地图或数据不存在')
+           console.warn('地图实例存在:', !!this.speedMap)
+           console.warn('热力图数据存在:', !!this.speedAnalysisData?.heatmap_data)
+           return
+         }
+
+         // 清除之前的热力图
+         if (this.speedHeatmapLayer) {
+           this.speedMap.remove(this.speedHeatmapLayer)
+           this.speedHeatmapLayer = null
+         }
+
+         // 准备热力图数据
+         const heatmapData = this.speedAnalysisData.heatmap_data.map(point => {
+           const colors = {
+             free: 100,      // 畅通 - 高值（绿色）
+             moderate: 70,   // 缓慢 - 中高值（黄色）
+             heavy: 40,      // 拥堵 - 中低值（橙色）
+             jam: 10         // 严重拥堵 - 低值（红色）
+           }
+           
+           return {
+             lng: point.lng || point.location?.lng,
+             lat: point.lat || point.location?.lat,
+             count: colors[point.congestion_level] || 50
+           }
+         }).filter(point => point.lng && point.lat)
+
+         if (heatmapData.length === 0) {
+           console.warn('没有有效的热力图数据点')
+           return
+         }
+
+         // 创建热力图插件
+         this.speedMap.plugin(['AMap.HeatMap'], () => {
+           this.speedHeatmapLayer = new window.AMap.HeatMap(this.speedMap, {
+             radius: 25,
+             opacity: [0, 0.8],
+             gradient: {
+               0.4: 'blue',      // 低速（拥堵）
+               0.6: 'cyan',      
+               0.7: 'lime',      
+               0.8: 'yellow',    
+               1.0: 'red'        // 高速（畅通）
+             }
+           })
+
+           this.speedHeatmapLayer.setDataSet({
+             data: heatmapData,
+             max: 100
+           })
+
+           console.log(`热力图已更新，共 ${heatmapData.length} 个数据点`)
+         })
+       },
+
+               // 新增：检查地图状态
+        checkMapStatus() {
+          console.log('🔍 地图状态检查')
+          console.log('地图容器ID:', this.speedMapContainerId)
+          console.log('地图容器元素:', document.getElementById(this.speedMapContainerId))
+          console.log('容器尺寸:', document.getElementById(this.speedMapContainerId)?.getBoundingClientRect())
+          console.log('地图初始化状态:', this.speedMapInitialized)
+          console.log('地图实例:', this.speedMap)
+          console.log('速度分析数据:', this.speedAnalysisData)
+          console.log('热力图数据:', this.speedAnalysisData?.heatmap_data)
+          console.log('window.AMap:', window.AMap)
+          
+          // 检查地图容器尺寸
+          const container = document.getElementById(this.speedMapContainerId)
+          if (container) {
+            console.log('地图容器尺寸:', {
+              width: container.offsetWidth,
+              height: container.offsetHeight,
+              display: window.getComputedStyle(container).display,
+              visibility: window.getComputedStyle(container).visibility
+            })
+          }
+        },
+
+        // 新增：清理地图资源
+        cleanupMap() {
+          try {
+            // 清理热力图图层
+            if (this.speedHeatmapLayer) {
+              this.speedMap?.remove(this.speedHeatmapLayer)
+              this.speedHeatmapLayer = null
+            }
+            
+            // 清理地图实例
+            if (this.speedMap) {
+              this.speedMap.clearMap()
+              this.speedMap.destroy()
+              this.speedMap = null
+            }
+            
+            // 重置状态
+            this.speedMapInitialized = false
+            console.log('✅ 地图资源已清理')
+          } catch (error) {
+            console.warn('⚠️ 清理地图资源时出错:', error)
+          }
+        }
     }
   }
   </script>
@@ -870,6 +856,66 @@
     cursor: not-allowed;
   }
   
+  /* 加载指示器样式 */
+  .loading-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin-top: 15px;
+    border: 1px solid #e9ecef;
+  }
+  
+  .loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-right: 15px;
+  }
+  
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  
+  .loading-text {
+    flex: 1;
+  }
+  
+  .loading-text p {
+    margin: 5px 0;
+    font-size: 16px;
+    color: #333;
+  }
+  
+  .loading-tip {
+    font-size: 14px !important;
+    color: #666 !important;
+  }
+  
+  .loading-progress {
+    width: 100%;
+    height: 8px;
+    background: #e9ecef;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 10px;
+  }
+  
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #3498db, #2ecc71);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+  }
+  
+
+  
   .stats-cards {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -933,6 +979,64 @@
     border: 1px solid #ddd;
     border-radius: 5px;
     position: relative;
+  }
+  
+  .speed-heatmap-map {
+    width: 100%;
+    height: 100%;
+    min-height: 400px;
+    position: relative;
+  }
+
+  .map-loading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.8);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    border-radius: 5px;
+    z-index: 1;
+  }
+
+  .map-loading .loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 10px;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  .debug-controls {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .debug-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+    background: #f0f0f0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+
+  .debug-btn:hover {
+    background: #e0e0e0;
+    border-color: #999;
   }
   
   .heatmap-canvas {
@@ -1075,6 +1179,78 @@
   .loading-overlay p {
     color: white;
     font-size: 16px;
+  }
+  
+  /* 提示信息样式 */
+  .analysis-prompt {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 15px;
+    padding: 30px;
+    margin: 20px 0;
+    color: white;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
+  }
+  
+  .prompt-content h3 {
+    margin: 0 0 15px 0;
+    font-size: 24px;
+    font-weight: 600;
+  }
+  
+  .prompt-content p {
+    margin: 0 0 25px 0;
+    font-size: 16px;
+    opacity: 0.9;
+  }
+  
+  .data-info {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    padding: 15px;
+    margin: 0 0 25px 0;
+    border-left: 4px solid rgba(255, 255, 255, 0.3);
+  }
+  
+  .data-info p {
+    margin: 0;
+    font-size: 14px;
+    opacity: 0.95;
+  }
+  
+  .prompt-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    max-width: 400px;
+    margin: 0 auto;
+  }
+  
+  .step {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 12px 20px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    backdrop-filter: blur(10px);
+  }
+  
+  .step-number {
+    width: 30px;
+    height: 30px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  
+  .step-text {
+    font-size: 14px;
+    text-align: left;
   }
   
   @media (max-width: 768px) {
