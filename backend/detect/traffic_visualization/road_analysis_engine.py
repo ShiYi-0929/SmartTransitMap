@@ -12,6 +12,8 @@ from geopy.distance import geodesic
 import math
 from scipy import stats
 from collections import defaultdict
+import os
+import time
 
 from .models import (
     RoadSegment, RoadTrafficData, RoadSegmentStatistics, 
@@ -126,48 +128,435 @@ class RoadAnalysisEngine:
     
     def analyze_road_traffic(self, trajectory_data: pd.DataFrame, 
                            road_segments: List[RoadSegment]) -> List[RoadTrafficData]:
-        """分析路段交通数据"""
+        """分析路段交通数据，优化版本"""
         try:
+            start_time = time.time()
             traffic_data = []
             
-            # 创建路段空间索引
-            segment_map = self._create_segment_spatial_index(road_segments)
+            # 标准化数据列名
+            trajectory_data = self._standardize_column_names(trajectory_data)
+            
+            # 确保数据有必需的列
+            required_columns = ['timestamp', 'latitude', 'longitude']
+            missing_columns = [col for col in required_columns if col not in trajectory_data.columns]
+            if missing_columns:
+                logger.error(f"数据中缺少必需的列: {missing_columns}")
+                return []
+            
+            logger.info(f"原始数据: {len(trajectory_data)} 条记录")
+            
+            # 数据量过大时进行智能采样
+            original_size = len(trajectory_data)
+            if original_size > 100000:
+                # 使用分层采样确保覆盖所有时间段和区域
+                sample_rate = min(1.0, 100000 / original_size)
+                logger.info(f"数据量过大，使用智能采样，目标采样率: {sample_rate:.2f}")
+                
+                # 先按时间窗口分组
+                trajectory_data['time_window'] = pd.to_datetime(trajectory_data['timestamp'], unit='s')
+                trajectory_data['time_window'] = trajectory_data['time_window'].dt.floor('15min')
+                
+                # 分时间窗口采样
+                sampled_dfs = []
+                for _, group in trajectory_data.groupby('time_window'):
+                    group_size = len(group)
+                    if group_size > 1000:
+                        # 对大时间窗口应用采样
+                        group_sample_rate = min(1.0, 1000 / group_size)
+                        sampled_group = group.sample(frac=group_sample_rate, random_state=42)
+                    else:
+                        # 小时间窗口保持原样
+                        sampled_group = group
+                    sampled_dfs.append(sampled_group)
+                
+                trajectory_data = pd.concat(sampled_dfs)
+                logger.info(f"智能采样后数据量: {len(trajectory_data)} 条记录，实际采样率: {len(trajectory_data)/original_size:.2f}")
+            
+            # 创建更高效的路段空间索引
+            logger.info("创建优化的路段空间索引...")
+            from .preprocess_road_network import RoadNetworkPreprocessor
+            preprocessor = RoadNetworkPreprocessor()
+            
+            # 检查是否可以使用预处理的空间索引
+            try:
+                if preprocessor.cache_exists:
+                    logger.info("使用预处理的空间索引")
+                    cached_data = preprocessor.load_cached_network()
+                    if cached_data and 'spatial_index' in cached_data:
+                        spatial_index = cached_data['spatial_index']
+                        # 使用预处理的空间索引
+                        logger.info(f"加载了预处理的空间索引，包含 {spatial_index.get('grid_count', 0)} 个网格")
+                    else:
+                        # 如果预处理索引不可用，创建临时索引
+                        logger.info("预处理索引不可用，创建临时索引")
+                        segment_map = self._create_segment_spatial_index(road_segments)
+                        logger.info(f"临时空间索引创建完成，包含 {len(segment_map)} 个网格")
+                else:
+                    # 创建临时索引
+                    logger.info("预处理索引不可用，创建临时索引")
+                    segment_map = self._create_segment_spatial_index(road_segments)
+                    logger.info(f"临时空间索引创建完成，包含 {len(segment_map)} 个网格")
+            except Exception as e:
+                # 如果预处理器出错，回退到原始方法
+                logger.error(f"使用预处理器时出错: {str(e)}")
+                logger.info("回退到原始加载方法")
+                segment_map = self._create_segment_spatial_index(road_segments)
+                logger.info(f"临时空间索引创建完成，包含 {len(segment_map)} 个网格")
+            
+            # 使用向量化操作计算网格索引
+            logger.info("计算轨迹点网格索引（向量化操作）...")
+            trajectory_data['grid_lat'] = np.round(trajectory_data['latitude'], 3)
+            trajectory_data['grid_lng'] = np.round(trajectory_data['longitude'], 3)
+            trajectory_data['grid_key'] = trajectory_data['grid_lat'].astype(str) + ',' + trajectory_data['grid_lng'].astype(str)
             
             # 按时间窗口聚合数据（15分钟窗口）
-            trajectory_data['time_window'] = pd.to_datetime(trajectory_data['timestamp'], unit='s')
-            trajectory_data['time_window'] = trajectory_data['time_window'].dt.floor('15min')
+            logger.info("按时间窗口聚合数据...")
+            if 'time_window' not in trajectory_data.columns:
+                trajectory_data['time_window'] = pd.to_datetime(trajectory_data['timestamp'], unit='s')
+                trajectory_data['time_window'] = trajectory_data['time_window'].dt.floor('15min')
             
-            for time_window in trajectory_data['time_window'].unique():
-                window_data = trajectory_data[trajectory_data['time_window'] == time_window]
+            # 获取唯一的时间窗口
+            time_windows = trajectory_data['time_window'].unique()
+            total_windows = len(time_windows)
+            logger.info(f"共 {total_windows} 个时间窗口需要处理")
+            
+            # 批量处理路段，而不是逐一处理
+            # 将路段分批处理以提高效率
+            batch_size = 50  # 每批处理的路段数
+            total_segments = len(road_segments)
+            batch_count = (total_segments + batch_size - 1) // batch_size  # 向上取整
+            
+            for batch_idx in range(batch_count):
+                start_idx = batch_idx * batch_size
+                end_idx = min(start_idx + batch_size, total_segments)
                 
-                for segment in road_segments:
-                    segment_traffic = self._calculate_segment_traffic(
-                        window_data, segment, time_window.timestamp()
-                    )
-                    if segment_traffic:
-                        traffic_data.append(segment_traffic)
+                logger.info(f"处理路段批次 {batch_idx+1}/{batch_count}，路段 {start_idx+1} 到 {end_idx}...")
+                
+                # 处理这批路段
+                for segment_idx in range(start_idx, end_idx):
+                    segment = road_segments[segment_idx]
+                    
+                    # 获取路段的边界框
+                    start_lat = segment.start_point['lat']
+                    start_lng = segment.start_point['lng']
+                    end_lat = segment.end_point['lat']
+                    end_lng = segment.end_point['lng']
+                    
+                    # 扩展边界以包括周围区域
+                    buffer = 0.001  # 约100米的缓冲区
+                    min_lat = min(start_lat, end_lat) - buffer
+                    max_lat = max(start_lat, end_lat) + buffer
+                    min_lng = min(start_lng, end_lng) - buffer
+                    max_lng = max(start_lng, end_lng) + buffer
+                    
+                    # 使用向量化操作过滤数据
+                    segment_data = trajectory_data[
+                        (trajectory_data['latitude'] >= min_lat) & 
+                        (trajectory_data['latitude'] <= max_lat) &
+                        (trajectory_data['longitude'] >= min_lng) & 
+                        (trajectory_data['longitude'] <= max_lng)
+                    ]
+                    
+                    # 如果没有相关数据，跳过此路段
+                    if len(segment_data) == 0:
+                        continue
+                    
+                    # 处理每个时间窗口
+                    segment_traffic_batch = []
+                    
+                    for time_window in time_windows:
+                        window_data = segment_data[segment_data['time_window'] == time_window]
+                        
+                        # 如果此时间窗口内没有数据，跳过
+                        if len(window_data) == 0:
+                            continue
+                        
+                        # 转换时间窗口为时间戳
+                        timestamp = pd.Timestamp(time_window).timestamp()
+                        
+                        # 计算路段交通数据
+                        segment_traffic = self._calculate_segment_traffic_optimized(window_data, segment, timestamp)
+                        
+                        # 如果有交通数据，添加到批次结果中
+                        if segment_traffic:
+                            segment_traffic_batch.append(segment_traffic)
+                    
+                    # 批量添加到总结果中
+                    if segment_traffic_batch:
+                        traffic_data.extend(segment_traffic_batch)
+                        
+                # 每完成一批，记录一次进度
+                current_progress = min(end_idx / total_segments * 100, 100)
+                logger.info(f"完成进度: {current_progress:.1f}%，当前已处理 {len(traffic_data)} 条交通数据")
             
-            logger.info(f"分析了 {len(traffic_data)} 条路段交通数据")
+            processing_time = time.time() - start_time
+            logger.info(f"分析了 {len(traffic_data)} 条路段交通数据，耗时 {processing_time:.2f} 秒")
             return traffic_data
             
         except Exception as e:
             logger.error(f"分析路段交通数据时出错: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
             return []
     
-    def _create_segment_spatial_index(self, segments: List[RoadSegment]) -> Dict:
-        """创建路段空间索引"""
-        segment_map = {}
-        for segment in segments:
-            # 简化的空间索引，基于起点坐标的网格
-            grid_lat = round(segment.start_point['lat'], 3)
-            grid_lng = round(segment.start_point['lng'], 3)
-            grid_key = f"{grid_lat},{grid_lng}"
-            
-            if grid_key not in segment_map:
-                segment_map[grid_key] = []
-            segment_map[grid_key].append(segment)
+    def _standardize_column_names(self, df: pd.DataFrame) -> pd.DataFrame:
+        """标准化数据列名，处理不同格式的数据源"""
+        # 复制数据框以避免修改原始数据
+        df = df.copy()
         
-        return segment_map
+        # 标准化时间戳列
+        if 'timestamp' not in df.columns:
+            for col in ['UTC', 'time', 'Time', 'TIME']:
+                if col in df.columns:
+                    df['timestamp'] = df[col]
+                    break
+        
+        # 标准化纬度列
+        if 'latitude' not in df.columns:
+            for col in ['LAT', 'lat', 'Lat', 'LATITUDE']:
+                if col in df.columns:
+                    # 检查是否需要除以因子（某些数据集中坐标可能被乘以了1e5）
+                    sample = df[col].dropna().iloc[0] if not df[col].dropna().empty else 0
+                    if abs(sample) > 1000:  # 值过大，可能需要除以因子
+                        df['latitude'] = df[col] / 1e5
+                    else:
+                        df['latitude'] = df[col]
+                    break
+        
+        # 标准化经度列
+        if 'longitude' not in df.columns:
+            for col in ['LON', 'lon', 'Lon', 'lng', 'LONGITUDE']:
+                if col in df.columns:
+                    # 检查是否需要除以因子
+                    sample = df[col].dropna().iloc[0] if not df[col].dropna().empty else 0
+                    if abs(sample) > 1000:  # 值过大，可能需要除以因子
+                        df['longitude'] = df[col] / 1e5
+                    else:
+                        df['longitude'] = df[col]
+                    break
+        
+        # 标准化速度列
+        if 'speed' not in df.columns:
+            # 优先使用清洗后的speed_kmh字段
+            if 'speed_kmh' in df.columns:
+                df['speed'] = df['speed_kmh']
+            elif 'SPEED' in df.columns:
+                # 分析SPEED字段的数值分布来判断处理方式
+                speed_values = df['SPEED'].dropna()
+                if not speed_values.empty:
+                    speed_stats = speed_values.describe()
+                    median_speed = speed_stats['50%']
+                    max_speed = speed_stats['max']
+                    
+                    print(f"SPEED字段分析: 中位数={median_speed:.2f}, 最大值={max_speed:.2f}")
+                    
+                    # 判断数值范围和可能的单位
+                    if max_speed > 500:  # 明显异常，可能是厘米/秒或其他单位
+                        if median_speed > 100:  # 大部分值都很大，可能需要除以100
+                            df['speed'] = df['SPEED'] / 100
+                            print("应用转换: SPEED / 100")
+                        else:  # 只有部分值很大，可能是异常数据
+                            # 限制最大速度为150km/h，异常值设为中位数
+                            df['speed'] = df['SPEED'].copy()
+                            df.loc[df['speed'] > 150, 'speed'] = median_speed
+                            print(f"异常值处理: >150km/h的值设为中位数{median_speed:.2f}")
+                    else:
+                        df['speed'] = df['SPEED']
+                        print("直接使用SPEED字段")
+                else:
+                    df['speed'] = df['SPEED']
+            elif 'Speed' in df.columns:
+                df['speed'] = df['Speed']
+            else:
+                # 如果没有速度字段，设置为0
+                df['speed'] = 0
+        
+        # 对速度进行最终的合理性检查和过滤
+        if 'speed' in df.columns:
+            # 记录处理前的统计
+            before_stats = df['speed'].describe()
+            print(f"处理前速度统计: 平均={before_stats['mean']:.2f}, 最大={before_stats['max']:.2f}")
+            
+            # 过滤异常速度值：负值、过大值（>120 km/h）
+            df.loc[df['speed'] < 0, 'speed'] = 0
+            df.loc[df['speed'] > 120, 'speed'] = 0  # 将异常高速度设为0而不是120
+            # 将NaN值设为0
+            df['speed'] = df['speed'].fillna(0)
+            
+            # 记录处理后的统计
+            after_stats = df['speed'].describe()
+            print(f"处理后速度统计: 平均={after_stats['mean']:.2f}, 最大={after_stats['max']:.2f}")
+            
+            # 统计有效速度记录
+            valid_speed_count = len(df[df['speed'] > 0])
+            print(f"有效速度记录: {valid_speed_count}/{len(df)} ({valid_speed_count/len(df)*100:.1f}%)")
+        
+        # 标准化车辆ID列
+        if 'vehicle_id' not in df.columns:
+            for col in ['COMMADDR', 'VehicleID', 'vehicle_id', 'id']:
+                if col in df.columns:
+                    df['vehicle_id'] = df[col].astype(str)
+                    break
+        
+        return df
+            
+    def _calculate_segment_traffic_optimized(self, window_data: pd.DataFrame, 
+                                          segment: RoadSegment, timestamp: float) -> Optional[RoadTrafficData]:
+        """优化版本的路段交通数据计算"""
+        try:
+            # 使用更高效的方法查找经过该路段的车辆
+            buffer_distance = 0.001  # 约100米缓冲区
+            
+            # 获取路段的起点和终点
+            start_lat = segment.start_point['lat']
+            start_lng = segment.start_point['lng']
+            end_lat = segment.end_point['lat']
+            end_lng = segment.end_point['lng']
+            
+            # 计算路段的边界框
+            min_lat = min(start_lat, end_lat) - buffer_distance
+            max_lat = max(start_lat, end_lat) + buffer_distance
+            min_lng = min(start_lng, end_lng) - buffer_distance
+            max_lng = max(start_lng, end_lng) + buffer_distance
+            
+            # 快速过滤：只考虑在边界框内的点
+            filtered_data = window_data[
+                (window_data['latitude'] >= min_lat) & 
+                (window_data['latitude'] <= max_lat) & 
+                (window_data['longitude'] >= min_lng) & 
+                (window_data['longitude'] <= max_lng)
+            ]
+            
+            if filtered_data.empty:
+                return None
+            
+            # 获取过滤后数据中的车辆ID
+            vehicle_ids = []
+            if 'vehicle_id' in filtered_data.columns:
+                vehicle_ids = filtered_data['vehicle_id'].unique().tolist()
+            elif 'COMMADDR' in filtered_data.columns:
+                vehicle_ids = filtered_data['COMMADDR'].unique().tolist()
+            
+            # 如果没有车辆，返回None（避免产生流量为0但有速度的情况）
+            if len(vehicle_ids) == 0:
+                return None
+            
+            # 计算路段长度（公里）
+            segment_length = segment.segment_length
+            
+            # 计算车辆平均速度
+            speeds = []
+            if 'speed' in filtered_data.columns:
+                speeds = filtered_data['speed'].values.tolist()
+            
+            if not speeds:
+                avg_speed = 0
+                min_speed = 0
+                max_speed = 0
+            else:
+                # 过滤无效数据
+                valid_speeds = [s for s in speeds if s > 0]
+                if valid_speeds:
+                    avg_speed = sum(valid_speeds) / len(valid_speeds)
+                    min_speed = min(valid_speeds)
+                    max_speed = max(valid_speeds)
+                else:
+                    avg_speed = 0
+                    min_speed = 0
+                    max_speed = 0
+            
+            # 计算交通密度（车辆/公里）
+            vehicle_count = len(vehicle_ids)
+            traffic_density = vehicle_count / max(0.1, segment_length)  # 防止除以0
+            
+            # 计算流量率（车辆/小时）
+            # 假设时间窗口为15分钟
+            time_window_hours = 0.25  # 15分钟 = 0.25小时
+            flow_rate = vehicle_count / time_window_hours
+            
+            # 确定拥堵级别
+            congestion_level = self._determine_congestion_level(
+                segment.road_type, avg_speed, traffic_density
+            )
+            
+            # 创建路段交通数据对象
+            traffic_data = RoadTrafficData(
+                segment_id=segment.segment_id,
+                timestamp=timestamp,
+                vehicle_count=vehicle_count,
+                avg_speed=avg_speed,
+                min_speed=min_speed,
+                max_speed=max_speed,
+                traffic_density=traffic_density,
+                flow_rate=flow_rate,
+                congestion_level=congestion_level
+            )
+            
+            return traffic_data
+            
+        except Exception as e:
+            logger.error(f"计算路段交通数据时出错: {str(e)}")
+            return None
+    
+    def _create_segment_spatial_index(self, segments: List[RoadSegment]) -> Dict:
+        """
+        创建路段的空间索引，用于快速查找某个位置附近的路段
+        
+        Args:
+            segments: 路段列表
+            
+        Returns:
+            网格到路段列表的映射
+        """
+        try:
+            # 创建网格索引
+            grid_map = defaultdict(list)
+            
+            for segment in segments:
+                # 获取起点和终点的坐标
+                start_lat = segment.start_point['lat']
+                start_lng = segment.start_point['lng']
+                end_lat = segment.end_point['lat']
+                end_lng = segment.end_point['lng']
+                
+                # 计算路段的网格键（四舍五入到3位小数）
+                start_grid_key = f"{round(start_lat, 3)},{round(start_lng, 3)}"
+                end_grid_key = f"{round(end_lat, 3)},{round(end_lng, 3)}"
+                
+                # 将路段添加到对应的网格中
+                grid_map[start_grid_key].append(segment)
+                
+                # 如果起点和终点不在同一个网格，也添加到终点网格
+                if start_grid_key != end_grid_key:
+                    grid_map[end_grid_key].append(segment)
+                
+                # 计算路段经过的中间网格点，确保长路段被正确索引
+                # 这里使用简单的线性插值
+                if start_grid_key != end_grid_key:
+                    # 获取两点之间的步长（按0.001度网格）
+                    steps = max(
+                        abs(int((end_lat - start_lat) / 0.001)),
+                        abs(int((end_lng - start_lng) / 0.001))
+                    )
+                    
+                    if steps > 1:
+                        for i in range(1, steps):
+                            # 线性插值计算中间点
+                            mid_lat = start_lat + (end_lat - start_lat) * i / steps
+                            mid_lng = start_lng + (end_lng - start_lng) * i / steps
+                            
+                            # 计算中间点的网格键
+                            mid_grid_key = f"{round(mid_lat, 3)},{round(mid_lng, 3)}"
+                            
+                            # 将路段添加到中间网格
+                            if mid_grid_key != start_grid_key and mid_grid_key != end_grid_key:
+                                grid_map[mid_grid_key].append(segment)
+            
+            return grid_map
+            
+        except Exception as e:
+            logger.error(f"创建路段空间索引时出错: {str(e)}")
+            return defaultdict(list)
     
     def _calculate_segment_traffic(self, window_data: pd.DataFrame, 
                                  segment: RoadSegment, timestamp: float) -> Optional[RoadTrafficData]:
@@ -187,9 +576,9 @@ class RoadAnalysisEngine:
                 return None
             
             vehicle_count = len(vehicles_on_segment)
-            avg_speed = np.mean(valid_speeds)
-            min_speed = np.min(valid_speeds)
-            max_speed = np.max(valid_speeds)
+            avg_speed = float(np.mean(valid_speeds))
+            min_speed = float(np.min(valid_speeds))
+            max_speed = float(np.max(valid_speeds))
             
             # 计算交通密度和流量率
             traffic_density = vehicle_count / segment.segment_length  # vehicles/km
@@ -299,7 +688,8 @@ class RoadAnalysisEngine:
             flows = [d.flow_rate for d in segment_data]
             vehicles = [d.vehicle_count for d in segment_data]
             
-            total_vehicles = sum(vehicles)
+            # 修复：计算平均车辆数而不是累加（避免重复计算）
+            total_vehicles = int(np.mean(vehicles)) if vehicles else 0
             avg_speed = np.mean(speeds)
             speed_variance = np.var(speeds)
             
@@ -328,8 +718,18 @@ class RoadAnalysisEngine:
             capacity_utilization = min(1.0, max_flow / estimated_capacity)
             
             # 效率评分（基于速度、流量、拥堵时长）
-            speed_score = min(100, (avg_speed / free_flow_speed) * 100)
-            flow_score = min(100, (off_peak_flow / max(peak_hour_flow, 1)) * 100)
+            # 防止除以零的错误
+            if free_flow_speed > 0:
+                speed_score = min(100, (avg_speed / free_flow_speed) * 100)
+            else:
+                speed_score = 0  # 如果free_flow_speed为0，直接设置分数为0
+                
+            # 防止除以零的错误    
+            if peak_hour_flow > 0:
+                flow_score = min(100, (off_peak_flow / peak_hour_flow) * 100)
+            else:
+                flow_score = 100  # 如果peak_hour_flow为0，则设置满分（表示没有高峰拥堵）
+                
             congestion_score = max(0, 100 - (congestion_hours / 24) * 100)
             efficiency_score = (speed_score + flow_score + congestion_score) / 3
             
@@ -357,36 +757,55 @@ class RoadAnalysisEngine:
             speed_ranges = [
                 "0-20", "20-40", "40-60", "60-80", "80-100", "100+"
             ]
-            speed_counts = defaultdict(int)
-            total_records = 0
             
+            # 方式1：基于路段的分布（每个路段算一个数据点）
+            segment_counts = defaultdict(int)
+            total_segments = len(traffic_data)
+            
+            # 修复速度值的处理逻辑
             for data in traffic_data:
                 speed = data.avg_speed
-                total_records += data.vehicle_count
                 
+                # 应用与前端相同的速度修正逻辑
+                if speed > 100:  # 异常高值，除以10
+                    speed = speed / 10
+                elif speed < 2:  # 可能是m/s，转换为km/h
+                    speed = speed * 3.6
+                
+                # 限制在合理范围内
+                speed = max(0, min(speed, 120))
+                
+                # 分配到合适的速度区间
                 if speed < 20:
-                    speed_counts["0-20"] += data.vehicle_count
+                    segment_counts["0-20"] += 1
                 elif speed < 40:
-                    speed_counts["20-40"] += data.vehicle_count
+                    segment_counts["20-40"] += 1
                 elif speed < 60:
-                    speed_counts["40-60"] += data.vehicle_count
+                    segment_counts["40-60"] += 1
                 elif speed < 80:
-                    speed_counts["60-80"] += data.vehicle_count
+                    segment_counts["60-80"] += 1
                 elif speed < 100:
-                    speed_counts["80-100"] += data.vehicle_count
+                    segment_counts["80-100"] += 1
                 else:
-                    speed_counts["100+"] += data.vehicle_count
+                    segment_counts["100+"] += 1
+            
+            print(f"速度分布计算调试 (修复后):")
+            print(f"  总路段数: {total_segments}")
+            print(f"  各速度区间路段数: {dict(segment_counts)}")
             
             distributions = []
             for speed_range in speed_ranges:
-                count = speed_counts[speed_range]
-                percentage = (count / total_records * 100) if total_records > 0 else 0
+                segment_count = segment_counts[speed_range]
+                percentage = (segment_count / total_segments * 100) if total_segments > 0 else 0
                 
+                # 使用路段数而不是车辆数
                 distributions.append(SpeedDistribution(
                     speed_range=speed_range,
-                    vehicle_count=count,
+                    vehicle_count=segment_count,  # 这里存储的是路段数
                     percentage=percentage
                 ))
+                
+                print(f"  {speed_range}: {segment_count}个路段 ({percentage:.1f}%)")
             
             return distributions
             
@@ -608,10 +1027,10 @@ class RoadAnalysisEngine:
         try:
             if congestion_threshold is None:
                 congestion_threshold = {
-                    "free": 40,      # >40km/h 为畅通
-                    "moderate": 25,  # 25-40km/h 为缓慢  
-                    "heavy": 15,     # 15-25km/h 为拥堵
-                    "jam": 0         # <15km/h 为严重拥堵
+                    "free": 20,      # >20km/h 为畅通 (降低阈值)
+                    "moderate": 10,  # 10-20km/h 为缓慢 (降低阈值)
+                    "heavy": 5,      # 5-10km/h 为拥堵 (降低阈值)
+                    "jam": 0         # <5km/h 为严重拥堵 (降低阈值)
                 }
             
             # 生成订单数据
@@ -656,15 +1075,25 @@ class RoadAnalysisEngine:
                     speed_variance = speeds.var()
                     order_count = len(grid_orders)
                     
-                    # 确定拥堵等级
-                    congestion_level = self._classify_congestion_level(avg_speed, congestion_threshold)
+                    # 计算订单密度（订单数/km²）
+                    grid_area_km2 = (spatial_resolution * 111) ** 2  # 网格面积（km²）
+                    order_density = order_count / grid_area_km2
+                    
+                    # 计算时间密度（订单数/小时）
+                    time_span_hours = (grid_orders['end_time'].max() - grid_orders['start_time'].min()) / 3600
+                    time_density = order_count / max(time_span_hours, 1)
+                    
+                    # 综合判断拥堵等级（考虑速度、密度、流量）
+                    congestion_level = self._classify_congestion_level_comprehensive(
+                        avg_speed, order_density, time_density, congestion_threshold
+                    )
                     
                     # 确定道路类型
                     avg_distance = grid_orders['distance_km'].mean()
                     road_type = "short_medium_trip" if avg_distance <= 8 else "long_trip"
                     
-                    # 计算置信度（基于订单数量）
-                    confidence_score = min(1.0, order_count / 20)  # 20个订单以上置信度为1
+                    # 计算置信度（基于订单数量和密度）
+                    confidence_score = min(1.0, (order_count / 20) * (order_density / 100))
                     
                     # 添加到速度分析数据
                     speed_analysis = OrderSpeedAnalysis(
@@ -681,7 +1110,9 @@ class RoadAnalysisEngine:
                     
                     # 添加到热力图数据
                     # 拥堵程度越高，热力图强度越大
-                    intensity = self._speed_to_intensity(avg_speed, congestion_threshold)
+                    intensity = self._speed_to_intensity_comprehensive(
+                        avg_speed, order_density, time_density, congestion_threshold
+                    )
                     
                     heatmap_point = RoadSpeedHeatmap(
                         lat=lat,
@@ -725,133 +1156,62 @@ class RoadAnalysisEngine:
             )
     
     def _extract_trip_orders(self, trajectory_data: pd.DataFrame) -> List[Dict]:
-        """从轨迹数据中提取订单信息"""
+        """
+        从轨迹数据中提取订单信息
+        简化版：使用时间窗口内的起终点
+        """
         try:
             orders_data = []
             
-            # 添加调试信息
-            total_vehicles = trajectory_data['vehicle_id'].nunique()
-            logger.info(f"开始处理 {total_vehicles} 辆车的轨迹数据")
-            
             # 按车辆分组处理
-            processed_vehicles = 0
-            for vehicle_id in trajectory_data['vehicle_id'].unique():
-                vehicle_data = trajectory_data[trajectory_data['vehicle_id'] == vehicle_id].copy()
-                vehicle_data = vehicle_data.sort_values('timestamp')
+            for vehicle_id, group in trajectory_data.groupby('vehicle_id'):
+                # 按时间排序
+                group = group.sort_values('timestamp')
                 
-                if len(vehicle_data) < 2:
+                if len(group) < 2:
                     continue
                 
-                processed_vehicles += 1
-                if processed_vehicles <= 3:  # 只调试前3辆车
-                    logger.info(f"处理车辆 {vehicle_id}: {len(vehicle_data)} 条记录")
-                    logger.info(f"时间范围: {vehicle_data['timestamp'].min()} - {vehicle_data['timestamp'].max()}")
-                
-                # 检测行程段（基于停车时间间隔）
-                time_gaps = vehicle_data['timestamp'].diff()
-                # 处理时间间隔：如果是数值类型，直接比较；如果是时间类型，转换为秒
-                if pd.api.types.is_numeric_dtype(time_gaps):
-                    # 数值类型时间戳，直接比较秒数
-                    # 采样数据间隔可能很大，所以使用更大的间隔来分割行程
-                    trip_breaks = time_gaps > 3600  # 1小时间隔认为是新行程
-                    if processed_vehicles <= 3:
-                        logger.info(f"车辆 {vehicle_id} 时间间隔: {time_gaps.dropna().head(5).tolist()}")
-                        logger.info(f"车辆 {vehicle_id} 行程分割点: {trip_breaks.sum()} 个")
-                else:
-                    # pandas时间类型，使用Timedelta
-                    trip_breaks = time_gaps > pd.Timedelta(seconds=3600)
-                
-                trip_id = 0
-                current_trip_start = 0
-                
-                for i, is_break in enumerate(trip_breaks):
-                    # 跳过第一个NaN值
-                    if i == 0:
-                        continue
-                        
-                    if is_break or i == len(vehicle_data) - 1:
-                        # 结束当前行程
-                        if i > current_trip_start:
-                            trip_data = vehicle_data.iloc[current_trip_start:i+1]
-                            order = self._create_order_from_trip(trip_data, vehicle_id, trip_id)
-                            if order:
-                                orders_data.append(order)
-                        
-                        trip_id += 1
-                        current_trip_start = i
-                
-                # 处理最后一个行程段
-                if current_trip_start < len(vehicle_data) - 1:
-                    trip_data = vehicle_data.iloc[current_trip_start:]
-                    order = self._create_order_from_trip(trip_data, vehicle_id, trip_id)
-                    if order:
-                        orders_data.append(order)
+                # 使用第一个和最后一个点作为订单的起终点
+                start_point = group.iloc[0]
+                end_point = group.iloc[-1]
             
-            logger.info(f"从 {trajectory_data['vehicle_id'].nunique()} 辆车的轨迹中提取了 {len(orders_data)} 个订单")
+                start_timestamp = float(start_point['timestamp'])
+                end_timestamp = float(end_point['timestamp'])
+                duration_min = (end_timestamp - start_timestamp) / 60
+            
+                # 过滤过短的行程（小于1分钟）
+                if duration_min < 1:
+                    continue
+            
+                # 计算距离
+                distance_km = self._calculate_distance(
+                    start_point['latitude'], start_point['longitude'],
+                    end_point['latitude'], end_point['longitude']
+                )
+            
+                # 过滤过短的距离（小于0.05km）
+                if distance_km < 0.05:
+                    continue
+                
+                orders_data.append({
+                    'order_id': f"{vehicle_id}_{len(orders_data)}",
+                    'vehicle_id': vehicle_id,
+                    'start_time': start_timestamp,
+                    'end_time': end_timestamp,
+                    'duration_min': duration_min,
+                    'distance_km': distance_km,
+                    'start_lat': start_point['latitude'],
+                    'start_lng': start_point['longitude'],
+                    'end_lat': end_point['latitude'],
+                    'end_lng': end_point['longitude']
+                })
+            
+            logger.info(f"从 {trajectory_data['vehicle_id'].nunique()} 个车辆中提取了 {len(orders_data)} 个订单")
             return orders_data
             
         except Exception as e:
-            logger.error(f"提取订单信息时出错: {str(e)}")
+            logger.error(f"提取订单数据时出错: {str(e)}")
             return []
-    
-    def _create_order_from_trip(self, trip_data: pd.DataFrame, vehicle_id: str, trip_id: int) -> Optional[Dict]:
-        """从行程数据创建订单"""
-        try:
-            if len(trip_data) < 2:
-                return None
-            
-            start_point = trip_data.iloc[0]
-            end_point = trip_data.iloc[-1]
-            
-            start_time = start_point['timestamp']
-            end_time = end_point['timestamp']
-            # 处理时间戳：如果是pandas时间戳，转换为Unix时间戳
-            if hasattr(start_time, 'timestamp'):
-                start_timestamp = start_time.timestamp()
-                end_timestamp = end_time.timestamp()
-            else:
-                # 如果已经是Unix时间戳
-                start_timestamp = float(start_time)
-                end_timestamp = float(end_time)
-            duration_min = (end_timestamp - start_timestamp) / 60
-            
-            # 过滤过短的行程（小于1分钟）- 放宽条件
-            if duration_min < 1:
-                logger.debug(f"过滤过短行程: {duration_min:.2f}分钟 < 1分钟")
-                return None
-            
-            # 计算距离
-            start_lat = start_point['latitude']
-            start_lng = start_point['longitude']
-            end_lat = end_point['latitude']
-            end_lng = end_point['longitude']
-            
-            distance_km = self._calculate_distance(start_lat, start_lng, end_lat, end_lng)
-            
-            # 过滤过短的距离（小于0.05km）- 放宽条件
-            if distance_km < 0.05:
-                logger.debug(f"过滤过短距离: {distance_km:.3f}km < 0.05km")
-                return None
-            
-            # 调试信息：记录成功创建的订单
-            logger.debug(f"创建订单: 车辆{vehicle_id}, 行程{trip_id}, 距离{distance_km:.2f}km, 时长{duration_min:.2f}分钟")
-            
-            return {
-                'order_id': f"{vehicle_id}_{trip_id}",
-                'vehicle_id': vehicle_id,
-                'start_time': start_timestamp,
-                'end_time': end_timestamp,
-                'duration_min': duration_min,
-                'distance_km': distance_km,
-                'start_lat': start_lat,
-                'start_lng': start_lng,
-                'end_lat': end_lat,
-                'end_lng': end_lng
-            }
-            
-        except Exception as e:
-            logger.error(f"创建订单时出错: {str(e)}")
-            return None
     
     def _aggregate_by_spatial_grid(self, orders_df: pd.DataFrame, resolution: float) -> Dict:
         """按空间网格聚合订单数据"""
@@ -1055,3 +1415,177 @@ class RoadAnalysisEngine:
             dlat = lat2 - lat1
             dlng = lng2 - lng1
             return math.sqrt(dlat**2 + dlng**2) * 111  # 大约转换为公里
+
+    def _classify_congestion_level_comprehensive(self, speed: float, order_density: float, 
+                                               time_density: float, threshold: dict) -> str:
+        """
+        综合判断拥堵等级
+        考虑速度、订单密度、时间密度三个因素
+        """
+        # 速度权重 (40%)
+        speed_score = 0
+        if speed >= threshold["free"]:
+            speed_score = 4  # 畅通
+        elif speed >= threshold["moderate"]:
+            speed_score = 3  # 缓慢
+        elif speed >= threshold["heavy"]:
+            speed_score = 2  # 拥堵
+        else:
+            speed_score = 1  # 严重拥堵
+        
+        # 订单密度权重 (30%) - 密度越高，拥堵程度越高
+        # 调整阈值，让低密度区域更容易被识别为畅通
+        density_score = 4  # 默认畅通
+        if order_density > 800:  # 高密度 (降低阈值)
+            density_score = 1
+        elif order_density > 400:  # 中高密度 (降低阈值)
+            density_score = 2
+        elif order_density > 150:  # 中密度 (降低阈值)
+            density_score = 3
+        # order_density <= 150 保持为 4 (畅通)
+        
+        # 时间密度权重 (30%) - 单位时间内订单越多，说明交通越繁忙
+        # 调整阈值，让低频率区域更容易被识别为畅通
+        time_score = 4  # 默认畅通
+        if time_density > 80:  # 高频率 (降低阈值)
+            time_score = 1
+        elif time_density > 40:  # 中高频率 (降低阈值)
+            time_score = 2
+        elif time_density > 15:  # 中频率 (降低阈值)
+            time_score = 3
+        # time_density <= 15 保持为 4 (畅通)
+        
+        # 综合评分
+        comprehensive_score = (speed_score * 0.4 + density_score * 0.3 + time_score * 0.3)
+        
+        # 调整判断阈值，让更多区域被识别为畅通
+        if comprehensive_score >= 3.2:  # 降低畅通阈值 (原来是3.5)
+            return "free"
+        elif comprehensive_score >= 2.3:  # 降低缓慢阈值 (原来是2.5)
+            return "moderate"
+        elif comprehensive_score >= 1.4:  # 降低拥堵阈值 (原来是1.5)
+            return "heavy"
+        else:
+            return "jam"
+
+    def _speed_to_intensity_comprehensive(self, speed: float, order_density: float, 
+                                        time_density: float, threshold: dict) -> float:
+        """
+        综合计算热力图强度
+        考虑速度、订单密度、时间密度
+        """
+        # 速度强度 (速度越低，强度越高)
+        max_speed = threshold["free"]
+        speed_intensity = max(0, min(1, (max_speed - speed) / max_speed))
+        
+        # 密度强度 (密度越高，强度越高)
+        density_intensity = min(1, order_density / 1000)
+        
+        # 时间强度 (频率越高，强度越高)
+        time_intensity = min(1, time_density / 100)
+        
+        # 综合强度
+        comprehensive_intensity = (speed_intensity * 0.4 + density_intensity * 0.3 + time_intensity * 0.3)
+        
+        return comprehensive_intensity
+
+    def load_road_network(self, csv_path: str = None) -> List[RoadSegment]:
+        """
+        从预处理的pickle文件或jn_FX.csv文件加载路网数据
+        优先使用预处理的pickle文件以提高加载速度
+        
+        Args:
+            csv_path: CSV文件路径，如果为None则使用默认路径
+            
+        Returns:
+            路段对象列表
+        """
+        try:
+            from .preprocess_road_network import load_preprocessed_road_network
+            
+            logger.info("尝试从预处理文件加载路网数据...")
+            start_time = time.time()
+            
+            # 尝试从预处理文件加载
+            segments = load_preprocessed_road_network()
+            
+            # 如果预处理文件加载成功，直接返回
+            if segments and len(segments) > 0:
+                load_time = time.time() - start_time
+                logger.info(f"成功从预处理文件加载 {len(segments)} 条路段，耗时 {load_time:.2f} 秒")
+                
+                # 将字典转换为RoadSegment对象
+                road_segments = []
+                for segment in segments:
+                    road_segment = RoadSegment(
+                        segment_id=segment['segment_id'],
+                        start_point=segment['start_point'],
+                        end_point=segment['end_point'],
+                        segment_length=segment['segment_length'],
+                        road_type=segment['road_type'],
+                        road_name=segment['road_name']
+                    )
+                    road_segments.append(road_segment)
+                
+                return road_segments
+            
+            # 如果预处理文件加载失败，使用原始方法加载
+            logger.warning("预处理文件加载失败，使用原始CSV文件加载")
+            
+            # 以下是原始加载逻辑
+            # 如果未指定路径，使用默认路径
+            if csv_path is None:
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+                csv_path = os.path.join(current_dir, 'data', 'jn_FX.csv')
+            
+            logger.info(f"从 {csv_path} 加载路网数据...")
+            
+            # 读取CSV文件
+            df = pd.read_csv(csv_path)
+            logger.info(f"加载了 {len(df)} 条路段数据")
+            
+            # 转换为RoadSegment对象列表
+            segments = []
+            for _, row in df.iterrows():
+                segment_id = str(row['ID'])
+                start_point = {'lat': row['Start_Y'], 'lng': row['Start_X']}
+                end_point = {'lat': row['END_Y'], 'lng': row['END_X']}
+                
+                # 确定道路类型（简单分类）
+                length = row['Length']
+                road_type = self._classify_road_type_by_length(length)
+                
+                # 创建路段对象
+                segment = RoadSegment(
+                    segment_id=segment_id,
+                    start_point=start_point,
+                    end_point=end_point,
+                    segment_length=length / 1000,  # 转换为公里
+                    road_type=road_type,
+                    road_name=f"Road_{segment_id}"
+                )
+                segments.append(segment)
+            
+            # 保存为预处理文件，以便下次使用
+            from .preprocess_road_network import preprocess_road_network
+            preprocess_road_network(csv_path=csv_path)
+            
+            logger.info(f"成功转换 {len(segments)} 条路段")
+            return segments
+            
+        except Exception as e:
+            logger.error(f"加载路网数据时出错: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return []
+
+    def _classify_road_type_by_length(self, length: float) -> str:
+        """根据路段长度简单分类道路类型"""
+        if length > 1000:  # 大于1000米
+            return "highway"
+        elif length > 500:  # 500-1000米
+            return "arterial"
+        elif length > 200:  # 200-500米
+            return "urban"
+        else:  # 小于200米
+            return "local"
