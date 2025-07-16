@@ -12,6 +12,7 @@ from collections import defaultdict
 from scipy import stats
 import requests
 import json
+from pydantic import BaseModel
 
 try:
     # 尝试相对导入（在模块内使用时）
@@ -67,8 +68,17 @@ class SmartPassengerEngine:
             weather_df = pd.read_csv(weather_file_path)
             logger.info(f"成功读取天气数据文件，共 {len(weather_df)} 条记录")
             
-            # 转换时间格式
-            weather_df['timestamp'] = pd.to_datetime(weather_df['Time_new']).astype(int) / 10**9
+            # 转换时间格式 - 修复时间戳转换问题
+            try:
+                weather_df['timestamp'] = pd.to_datetime(weather_df['Time_new']).astype(np.int64) // 10**9
+            except Exception as e:
+                logger.warning(f"时间戳转换失败，使用备用方法: {e}")
+                # 备用方法：直接使用数值转换
+                weather_df['timestamp'] = pd.to_numeric(weather_df['Time_new'], errors='coerce')
+                # 如果还是失败，使用默认时间戳
+                if weather_df['timestamp'].isna().any():
+                    logger.warning("使用默认时间戳")
+                    weather_df['timestamp'] = start_time
             
             # 过滤时间范围内的数据
             weather_df_filtered = weather_df[
@@ -213,6 +223,32 @@ class SmartPassengerEngine:
         try:
             passenger_flows = []
             
+            # 处理列名重复问题：如果同时存在timestamp和UTC，优先使用UTC
+            if 'timestamp' in trajectory_data.columns and 'UTC' in trajectory_data.columns:
+                # 删除重复的timestamp列，保留UTC
+                trajectory_data = trajectory_data.drop(columns=['timestamp'])
+            
+            # 标准化列名映射
+            column_mapping = {
+                'COMMADDR': 'vehicle_id',
+                'UTC': 'timestamp',
+                'lat': 'latitude',
+                'lon': 'longitude',
+                'SPEED': 'speed',
+                'TFLAG': 'tflag',
+                'is_occupied': 'is_occupied'
+            }
+            
+            # 重命名列
+            trajectory_data = trajectory_data.rename(columns=column_mapping)
+            
+            # 确保必要的列存在
+            required_columns = ['vehicle_id', 'timestamp', 'latitude', 'longitude']
+            missing_columns = [col for col in required_columns if col not in trajectory_data.columns]
+            if missing_columns:
+                logger.error(f"缺少必要的列: {missing_columns}")
+                return []
+            
             # 按车辆ID分组处理
             for vehicle_id in trajectory_data['vehicle_id'].unique():
                 vehicle_data = trajectory_data[trajectory_data['vehicle_id'] == vehicle_id].sort_values('timestamp')
@@ -252,12 +288,51 @@ class SmartPassengerEngine:
         try:
             taxi_demand_data = []
             
+            # 处理列名重复问题：如果同时存在timestamp和UTC，优先使用UTC
+            if 'timestamp' in trajectory_data.columns and 'UTC' in trajectory_data.columns:
+                # 删除重复的timestamp列，保留UTC
+                trajectory_data = trajectory_data.drop(columns=['timestamp'])
+            
+            # 标准化列名映射
+            column_mapping = {
+                'COMMADDR': 'vehicle_id',
+                'UTC': 'timestamp',
+                'lat': 'latitude',
+                'lon': 'longitude',
+                'SPEED': 'speed',
+                'TFLAG': 'tflag',
+                'is_occupied': 'is_occupied'
+            }
+            
+            # 重命名列
+            trajectory_data = trajectory_data.rename(columns=column_mapping)
+            
+            # 确保必要的列存在
+            required_columns = ['vehicle_id', 'timestamp', 'latitude', 'longitude']
+            missing_columns = [col for col in required_columns if col not in trajectory_data.columns]
+            if missing_columns:
+                logger.error(f"缺少必要的列: {missing_columns}")
+                return []
+            
             # 识别出租车轨迹
             taxi_data = self._filter_taxi_trajectories(trajectory_data)
             
-            # 按时间窗口分析
+            # 按时间窗口分析 - 修复时间戳转换问题
+            try:
+                # 确保timestamp是数值类型
+                if hasattr(taxi_data['timestamp'], 'dtype'):
+                    if taxi_data['timestamp'].dtype == 'object':
+                        taxi_data['timestamp'] = pd.to_numeric(taxi_data['timestamp'], errors='coerce')
+                else:
+                    # 如果不是Series，直接转换
+                    taxi_data['timestamp'] = pd.to_numeric(taxi_data['timestamp'], errors='coerce')
+                
             taxi_data['time_window'] = pd.to_datetime(taxi_data['timestamp'], unit='s')
             taxi_data['time_window'] = taxi_data['time_window'].dt.floor(f'{time_resolution}min')
+            except Exception as e:
+                logger.error(f"时间窗口处理失败: {e}")
+                # 如果失败，使用默认时间窗口
+                taxi_data['time_window'] = pd.Timestamp.now().floor(f'{time_resolution}min')
             
             # 空间网格化
             grid_size = 0.01  # 约1km
@@ -469,13 +544,44 @@ class SmartPassengerEngine:
         """分析载客路段"""
         segments = []
         
-        # 简化的载客识别逻辑
+        # 标准化列名映射
+        column_mapping = {
+            'COMMADDR': 'vehicle_id',
+            'UTC': 'timestamp',
+            'lat': 'latitude',
+            'lon': 'longitude',
+            'SPEED': 'speed',
+            'TFLAG': 'tflag',
+            'is_occupied': 'is_occupied'
+        }
+        
+        # 重命名列
+        vehicle_data = vehicle_data.rename(columns=column_mapping)
+        
+        # 使用真实的载客状态字段
         if len(vehicle_data) >= 2:
-            start_point = vehicle_data.iloc[0]
-            end_point = vehicle_data.iloc[-1]
-            
-            # 基于轨迹特征判断是否载客
+            # 检查载客状态字段
+            if 'is_occupied' in vehicle_data.columns:
+                # 使用is_occupied字段
+                loaded_records = vehicle_data[vehicle_data['is_occupied'] == True]
+            elif 'tflag' in vehicle_data.columns:
+                # 使用TFLAG字段
+                loaded_records = vehicle_data[vehicle_data['tflag'] == 268435456]
+            else:
+                # 如果没有载客状态字段，使用距离和时长判断
             if self._is_passenger_trip(vehicle_data):
+                    loaded_records = vehicle_data
+                else:
+                    loaded_records = pd.DataFrame()
+            
+            # 如果有载客记录，生成载客路段
+            if not loaded_records.empty:
+                start_point = loaded_records.iloc[0]
+                end_point = loaded_records.iloc[-1]
+                
+                # 载客数量就是载客记录的数量
+                passenger_count = len(loaded_records)
+                
                 segments.append({
                     'start_time': start_point['timestamp'],
                     'end_time': end_point['timestamp'],
@@ -483,7 +589,7 @@ class SmartPassengerEngine:
                     'start_lng': start_point['longitude'],
                     'end_lat': end_point['latitude'],
                     'end_lng': end_point['longitude'],
-                    'passenger_count': np.random.randint(1, 4)  # 模拟载客数量
+                    'passenger_count': passenger_count  # 使用真实载客数量
                 })
         
         return segments
@@ -504,11 +610,33 @@ class SmartPassengerEngine:
         return trajectory_data.copy()
     
     def _classify_taxi_status(self, group_data: pd.DataFrame) -> Tuple[int, int]:
-        """分类出租车载客状态"""
-        total_taxis = len(group_data['vehicle_id'].unique())
-        # 简化逻辑：随机分配载客和空载
-        loaded_taxis = int(total_taxis * np.random.uniform(0.3, 0.7))
-        empty_taxis = total_taxis - loaded_taxis
+        """分类出租车载客状态（基于真实数据）"""
+        # 标准化列名映射
+        column_mapping = {
+            'COMMADDR': 'vehicle_id',
+            'UTC': 'timestamp',
+            'lat': 'latitude',
+            'lon': 'longitude',
+            'SPEED': 'speed',
+            'TFLAG': 'tflag',
+            'is_occupied': 'is_occupied'
+        }
+        
+        # 重命名列
+        group_data = group_data.rename(columns=column_mapping)
+        
+        # 优先使用is_occupied字段
+        if 'is_occupied' in group_data.columns:
+            loaded_taxis = group_data[group_data['is_occupied'] == True]['vehicle_id'].nunique()
+            empty_taxis = group_data[group_data['is_occupied'] == False]['vehicle_id'].nunique()
+        # 兼容tflag字段
+        elif 'tflag' in group_data.columns:
+            loaded_taxis = group_data[group_data['tflag'] == 268435456]['vehicle_id'].nunique()
+            empty_taxis = group_data[group_data['tflag'] == 0]['vehicle_id'].nunique()
+        else:
+            # 无法判断时全部视为空载
+            loaded_taxis = 0
+            empty_taxis = group_data['vehicle_id'].nunique()
         return loaded_taxis, empty_taxis
     
     def _estimate_orders(self, group_data: pd.DataFrame) -> int:
@@ -595,3 +723,73 @@ class SmartPassengerEngine:
                     })
         
         return peak_periods
+
+class HourlyWeatherImpact(BaseModel):
+    hour: int
+    weather_condition: str
+    temperature: float
+    humidity: float
+    precipitation: float
+    loaded_vehicles: int
+    total_vehicles: int
+    impact_factor: float
+    impact_description: str
+
+class DailyWeatherImpact(BaseModel):
+    date: str
+    hourly_impacts: List[HourlyWeatherImpact]
+    daily_summary: Dict[str, Any]
+
+def analyze_daily_weather_impact(self, trajectory_data: pd.DataFrame, weather_data: List[WeatherData]) -> List[DailyWeatherImpact]:
+    """分析每天每小时的天气影响"""
+    from collections import defaultdict
+    from datetime import datetime
+    # 1. 按日期分组天气
+    weather_by_day = defaultdict(list)
+    for w in weather_data:
+        date_str = datetime.fromtimestamp(w.timestamp).strftime('%Y-%m-%d')
+        weather_by_day[date_str].append(w)
+    # 2. 按日期分组轨迹
+    trajectory_data['date'] = pd.to_datetime(trajectory_data['timestamp'], unit='s').dt.strftime('%Y-%m-%d')
+    trajectory_data['hour'] = pd.to_datetime(trajectory_data['timestamp'], unit='s').dt.hour
+    traj_by_day = {d: df for d, df in trajectory_data.groupby('date')}
+    # 3. 每天分析
+    daily_results = []
+    for date, weather_list in weather_by_day.items():
+        day_traj = traj_by_day.get(date, pd.DataFrame())
+        hourly_impacts = []
+        for hour in range(24):
+            # 找到该小时的天气
+            hour_weather = next((w for w in weather_list if datetime.fromtimestamp(w.timestamp).hour == hour), None)
+            if hour_weather is None:
+                continue
+            # 该小时的车辆
+            hour_traj = day_traj[day_traj['hour'] == hour] if not day_traj.empty else pd.DataFrame()
+            loaded_vehicles = hour_traj[hour_traj['is_occupied'] == True]['vehicle_id'].nunique() if not hour_traj.empty else 0
+            total_vehicles = hour_traj['vehicle_id'].nunique() if not hour_traj.empty else 0
+            impact_factor = (loaded_vehicles / total_vehicles) if total_vehicles > 0 else 0
+            impact_description = f"载客率：{impact_factor:.2%}，温度：{hour_weather.temperature}°C，降水：{hour_weather.precipitation}mm"
+            hourly_impacts.append(HourlyWeatherImpact(
+                hour=hour,
+                weather_condition=hour_weather.weather_type,
+                temperature=hour_weather.temperature,
+                humidity=hour_weather.humidity,
+                precipitation=hour_weather.precipitation,
+                loaded_vehicles=loaded_vehicles,
+                total_vehicles=total_vehicles,
+                impact_factor=impact_factor,
+                impact_description=impact_description
+            ))
+        # 每日汇总
+        avg_impact = sum(h.impact_factor for h in hourly_impacts) / len(hourly_impacts) if hourly_impacts else 0
+        daily_summary = {
+            'avg_impact_factor': avg_impact,
+            'max_impact_hour': max(hourly_impacts, key=lambda h: h.impact_factor).hour if hourly_impacts else None,
+            'min_impact_hour': min(hourly_impacts, key=lambda h: h.impact_factor).hour if hourly_impacts else None
+        }
+        daily_results.append(DailyWeatherImpact(
+            date=date,
+            hourly_impacts=hourly_impacts,
+            daily_summary=daily_summary
+        ))
+    return daily_results

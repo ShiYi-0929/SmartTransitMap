@@ -6,8 +6,8 @@
         <div class="flex items-center">
           <Users class="h-8 w-8 text-blue-400 mr-3" />
           <div>
-            <h1 class="text-3xl font-bold text-white">智能客流分析</h1>
-            <p class="text-blue-200 mt-1">Intelligent Passenger Flow Analysis</p>
+            <h1 class="text-3xl font-bold text-white">载客车辆分析</h1>
+            <p class="text-blue-200 mt-1">Loaded Vehicles Analysis</p>
           </div>
         </div>
         
@@ -24,211 +24,245 @@
       </div>
     </div>
 
-    <!-- 功能选择卡片 -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-      <!-- 天气影响分析 -->
-      <div class="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20 hover:bg-white/15 transition-all cursor-pointer"
-           @click="activeModule = 'weather'" 
-           :class="{ 'ring-2 ring-blue-400': activeModule === 'weather' }">
-        <div class="flex items-center justify-between mb-4">
-          <div class="flex items-center">
-            <Cloud class="h-6 w-6 text-blue-400 mr-3" />
-            <h2 class="text-xl font-semibold text-white">天气影响分析</h2>
-          </div>
-          <div class="text-blue-400">
-            <ChevronRight class="h-5 w-5" />
-          </div>
+    <!-- 控制面板 -->
+    <div class="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20 mb-6">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <!-- 日期选择 -->
+        <div>
+          <label class="block text-white text-sm font-medium mb-2">选择日期</label>
+          <select 
+            v-model="selectedDate" 
+            @change="loadTimelineData"
+            class="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+          >
+            <option value="2013-09-12">2013-09-12 (周四)</option>
+            <option value="2013-09-13">2013-09-13 (周五)</option>
+            <option value="2013-09-14">2013-09-14 (周六)</option>
+            <option value="2013-09-15">2013-09-15 (周日)</option>
+            <option value="2013-09-16">2013-09-16 (周一)</option>
+            <option value="2013-09-17">2013-09-17 (周二)</option>
+            <option value="2013-09-18">2013-09-18 (周三)</option>
+          </select>
         </div>
-        <p class="text-blue-200 text-sm mb-3">分析天气变化对客流量的影响程度</p>
-        <div class="flex items-center space-x-4 text-sm">
-          <div class="flex items-center">
-            <div class="w-2 h-2 bg-blue-400 rounded-full mr-2"></div>
-            <span class="text-blue-300">真实天气数据</span>
+
+        <!-- 时间分辨率 -->
+        <div>
+          <label class="block text-white text-sm font-medium mb-2">时间分辨率</label>
+          <select 
+            v-model="timeResolution" 
+            @change="loadTimelineData"
+            class="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+          >
+            <option value="15">15分钟</option>
+            <option value="30">30分钟</option>
+            <option value="60">1小时</option>
+          </select>
+        </div>
+
+        <!-- 刷新按钮 -->
+        <div class="flex items-end">
+          <button 
+            @click="loadTimelineData"
+            :disabled="loading"
+            class="w-full px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-all disabled:opacity-50 flex items-center justify-center"
+          >
+            <RefreshCw class="h-4 w-4 mr-2" :class="{ 'animate-spin': loading }" />
+            {{ loading ? '加载中...' : '刷新数据' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div class="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-white/60 text-sm">载客车辆</p>
+            <p class="text-2xl font-bold text-blue-400">{{ currentStats.loadedVehicles }}</p>
           </div>
-          <div class="flex items-center">
-            <div class="w-2 h-2 bg-green-400 rounded-full mr-2"></div>
-            <span class="text-green-300">关联性分析</span>
-          </div>
+          <Car class="h-8 w-8 text-blue-400" />
         </div>
       </div>
 
-      <!-- 载客出租车分析 -->
-      <div class="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20 hover:bg-white/15 transition-all cursor-pointer"
-           @click="activeModule = 'taxi'" 
-           :class="{ 'ring-2 ring-purple-400': activeModule === 'taxi' }">
-        <div class="flex items-center justify-between mb-4">
-          <div class="flex items-center">
-            <Car class="h-6 w-6 text-purple-400 mr-3" />
-            <h2 class="text-xl font-semibold text-white">载客出租车分析</h2>
+      <div class="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-white/60 text-sm">总车辆</p>
+            <p class="text-2xl font-bold text-green-400">{{ currentStats.totalVehicles }}</p>
           </div>
-          <div class="text-purple-400">
-            <ChevronRight class="h-5 w-5" />
-          </div>
-        </div>
-        <p class="text-purple-200 text-sm mb-3">分析载客出租车数量和需求分布</p>
-        <div class="flex items-center space-x-4 text-sm">
-          <div class="flex items-center">
-            <div class="w-2 h-2 bg-purple-400 rounded-full mr-2"></div>
-            <span class="text-purple-300">历史分析</span>
-          </div>
-          <div class="flex items-center">
-            <div class="w-2 h-2 bg-yellow-400 rounded-full mr-2"></div>
-            <span class="text-yellow-300">供需分析</span>
-          </div>
+          <Truck class="h-8 w-8 text-green-400" />
         </div>
       </div>
+
+      <div class="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-white/60 text-sm">载客率</p>
+            <p class="text-2xl font-bold text-purple-400">{{ currentStats.occupancyRate }}%</p>
+          </div>
+          <Percent class="h-8 w-8 text-purple-400" />
+        </div>
+      </div>
+      <!-- 当前时间卡片已移除 -->
     </div>
 
     <!-- 主要内容区域 -->
-    <div class="space-y-6">
-      <!-- 天气影响分析模块 -->
-      <div v-if="activeModule === 'weather'" class="space-y-6">
-        <WeatherImpactTimeline
-          :daily-impacts="dailyImpacts"
-          :selected-date="selectedDate"
-          @date-change="selectedDate = $event"
-          @hour-hover="selectedHour = $event"
-        />
-        <WeatherImpactMechanism :hourly-impact="currentHourlyImpact" />
-        <WeatherImpactAnalysis 
-          :weather-data="weatherData" 
-          :passenger-data="passengerData"
-          :loading="loading"
-          @refresh="loadWeatherData"
-        />
-      </div>
-
-      <!-- 载客出租车分析模块 -->
-      <div v-if="activeModule === 'taxi'" class="space-y-6">
-        <TaxiDemandAnalysis 
-          :taxi-data="taxiData"
-          :real-time-data="realTimeData"
-          :loading="loading"
-          @refresh="loadTaxiData"
-        />
-      </div>
-
-      <!-- 综合分析视图 -->
-      <div v-if="activeModule === 'comprehensive'" class="space-y-6">
-        <!-- 数据分析面板 -->
-        <div class="bg-white/10 backdrop-blur-md rounded-xl border border-white/20">
-          <div class="p-6 border-b border-white/10">
-            <h3 class="text-xl font-semibold text-white flex items-center">
-              <Activity class="h-5 w-5 mr-2" />
-              数据分析面板
-            </h3>
-          </div>
-          <div class="p-6">
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div class="text-center p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
-                <div class="text-2xl font-bold text-blue-400">{{ realTimeStats.activePassengers }}</div>
-                <div class="text-sm text-gray-300">活跃乘客</div>
-              </div>
-              <div class="text-center p-4 bg-green-500/10 rounded-lg border border-green-500/20">
-                <div class="text-2xl font-bold text-green-400">{{ realTimeStats.loadedTaxis }}</div>
-                <div class="text-sm text-gray-300">载客车辆</div>
-              </div>
-              <div class="text-center p-4 bg-purple-500/10 rounded-lg border border-purple-500/20">
-                <div class="text-2xl font-bold text-purple-400">{{ realTimeStats.demandIndex }}</div>
-                <div class="text-sm text-gray-300">需求指数</div>
-              </div>
-              <div class="text-center p-4 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
-                <div class="text-2xl font-bold text-yellow-400">{{ realTimeStats.weatherImpact }}</div>
-                <div class="text-sm text-gray-300">天气影响</div>
-              </div>
-            </div>
+    <div class="grid grid-cols-1 gap-6">
+      <!-- 载客率动态折线图 -->
+      <div class="bg-white/10 backdrop-blur-md rounded-xl border border-white/20">
+        <div class="p-6 border-b border-white/10 flex items-center justify-between">
+          <h3 class="text-xl font-semibold text-white flex items-center">
+            <TrendingUp class="h-5 w-5 mr-2" />
+            载客率动态折线图
+          </h3>
+          <div class="flex items-center space-x-2">
+            <button @click="togglePlay" class="px-3 py-1 rounded bg-blue-500 text-white hover:bg-blue-600 transition-all">
+              <span v-if="isPlaying">⏸ 暂停</span>
+              <span v-else>▶️ 播放</span>
+            </button>
+            <span class="text-white/60 text-sm">当前: {{ timelineData[activeIndex]?.time_window || '--:--' }}</span>
           </div>
         </div>
-
-        <!-- 综合分析图表 -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <WeatherImpactAnalysis 
-            :weather-data="weatherData" 
-            :passenger-data="passengerData"
-            :loading="loading"
-            :compact="true"
-            @refresh="loadWeatherData"
-          />
-          <TaxiDemandAnalysis 
-            :taxi-data="taxiData"
-            :real-time-data="realTimeData"
-            :loading="loading"
-            :compact="true"
-            @refresh="loadTaxiData"
-          />
+        <div class="p-6">
+          <div v-if="loading" class="flex items-center justify-center h-64">
+            <div class="text-white">加载中...</div>
+          </div>
+          <div v-else-if="timelineData.length === 0" class="flex items-center justify-center h-64">
+            <div class="text-white/60">暂无数据</div>
+          </div>
+          <div v-else>
+            <div ref="chartRef" style="width: 100%; height: 400px;"></div>
+          </div>
+        </div>
+      </div>
+      <!-- 载客车辆时间线（Element Plus 时间轴） -->
+      <div class="bg-white/10 backdrop-blur-md rounded-xl border border-white/20">
+        <div class="p-6 border-b border-white/10 flex items-center justify-between">
+          <h3 class="text-xl font-semibold text-white flex items-center">
+            <TrendingUp class="h-5 w-5 mr-2" />
+            载客车辆时间线
+          </h3>
+          <div class="flex items-center space-x-2">
+            <button @click="togglePlay" class="px-3 py-1 rounded bg-blue-500 text-white hover:bg-blue-600 transition-all">
+              <span v-if="isPlaying">⏸ 暂停</span>
+              <span v-else>▶️ 播放</span>
+            </button>
+            <span class="text-white/60 text-sm">当前: {{ timelineData[activeIndex]?.time_window || '--:--' }}</span>
+          </div>
+        </div>
+        <div class="p-6">
+          <div v-if="loading" class="flex items-center justify-center h-64">
+            <div class="text-white">加载中...</div>
+          </div>
+          <div v-else-if="timelineData.length === 0" class="flex items-center justify-center h-64">
+            <div class="text-white/60">暂无数据</div>
+          </div>
+          <div v-else>
+            <el-timeline>
+              <el-timeline-item
+                v-for="(item, idx) in timelineData"
+                :key="item.time_window"
+                :timestamp="item.time_window"
+                :color="activeIndex === idx ? '#e6a23c' : getOccupancyColor(item.occupancy_rate)"
+                :class="{ 'animate-pulse': activeIndex === idx }"
+              >
+                <div class="flex items-center justify-between">
+                  <span class="font-bold text-blue-300">{{ item.loaded_vehicles }} 辆载客</span>
+                  <span class="font-bold text-yellow-400">载客率 {{ item.occupancy_rate }}%</span>
+                </div>
+              </el-timeline-item>
+            </el-timeline>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- 底部操作栏 -->
-    <div class="fixed bottom-6 right-6 flex space-x-3">
-      <button 
-        @click="activeModule = 'comprehensive'"
-        :class="[
-          'px-4 py-2 rounded-lg transition-all',
-          activeModule === 'comprehensive' 
-            ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg' 
-            : 'bg-white/10 text-white/70 hover:bg-white/20'
-        ]"
-      >
-        <Grid class="h-4 w-4 mr-2 inline" />
-        综合视图
-      </button>
-      <button 
-        @click="refreshAllData"
-        :disabled="loading"
-        class="px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-lg transition-all disabled:opacity-50"
-      >
-        <RefreshCw class="h-4 w-4 mr-2 inline" :class="{ 'animate-spin': loading }" />
-        刷新数据
-      </button>
+    <!-- 详细统计 -->
+    <div class="mt-6 bg-white/10 backdrop-blur-md rounded-xl border border-white/20">
+      <div class="p-6 border-b border-white/10">
+        <h3 class="text-xl font-semibold text-white flex items-center">
+          <BarChart3 class="h-5 w-5 mr-2" />
+          详细统计
+        </h3>
+      </div>
+      <div class="p-6">
+        <div v-if="timelineData.length > 0" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div class="text-center">
+            <div class="text-3xl font-bold text-blue-400">{{ summary.maxLoadedVehicles }}</div>
+            <div class="text-white/60 mt-1">最大载客车辆数</div>
+          </div>
+          <div class="text-center">
+            <div class="text-3xl font-bold text-green-400">{{ summary.avgOccupancyRate }}%</div>
+            <div class="text-white/60 mt-1">平均载客率</div>
+          </div>
+          <div class="text-center">
+            <div class="text-3xl font-bold text-purple-400">{{ summary.totalTimeWindows }}</div>
+            <div class="text-white/60 mt-1">时间段总数</div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { 
-  Users, Cloud, Car, ChevronRight, Activity, Grid, RefreshCw
+  Users, Car, Truck, Percent, Clock, TrendingUp, Map, BarChart3, RefreshCw
 } from 'lucide-vue-next'
 import { smartPassengerAPI } from '@/api/smartPassenger'
-import WeatherImpactAnalysis from './components/WeatherImpactAnalysis.vue'
-import TaxiDemandAnalysis from './components/TaxiDemandAnalysis.vue'
-import WeatherImpactTimeline from './components/WeatherImpactTimeline.vue'
-import WeatherImpactMechanism from './components/WeatherImpactMechanism.vue'
+import { ElTimeline, ElTimelineItem } from 'element-plus'
+import * as echarts from 'echarts'
+const chartRef = ref(null)
+let chartInstance = null
 
 // 响应式数据
-const activeModule = ref('comprehensive')
 const loading = ref(false)
 const currentTime = ref('')
-const weatherData = ref(null)
-const passengerData = ref(null)
-const taxiData = ref(null)
-const realTimeData = ref(null)
+const selectedDate = ref('2013-09-13')
+const timeResolution = ref(15)
+const timelineData = ref([])
+const selectedTimeWindow = ref(null)
 
-// 实时统计数据
-const realTimeStats = ref({
-  activePassengers: 0,
-  loadedTaxis: 0,
-  demandIndex: 0,
-  weatherImpact: 0
+// 计算属性
+const currentStats = computed(() => {
+  if (selectedTimeWindow.value) {
+    return {
+      loadedVehicles: selectedTimeWindow.value.loaded_vehicles,
+      totalVehicles: selectedTimeWindow.value.total_vehicles,
+      occupancyRate: selectedTimeWindow.value.occupancy_rate,
+      currentTime: selectedTimeWindow.value.time_window
+    }
+  }
+  return {
+    loadedVehicles: 0,
+    totalVehicles: 0,
+    occupancyRate: 0,
+    currentTime: '--:--'
+  }
 })
 
-// 新增：每日天气影响数据
-const dailyImpacts = ref([])
-const selectedDate = ref('')
-const selectedHour = ref(null)
-
-const currentHourlyImpact = computed(() => {
-  const day = dailyImpacts.value.find(d => d.date === selectedDate.value)
-  if (!day || selectedHour.value === null) return null
-  return day.hourly_impacts.find(h => h.hour === selectedHour.value) || null
+const summary = computed(() => {
+  if (timelineData.value.length === 0) {
+    return {
+      maxLoadedVehicles: 0,
+      avgOccupancyRate: 0,
+      totalTimeWindows: 0
+    }
+  }
+  
+  const maxLoaded = Math.max(...timelineData.value.map(d => d.loaded_vehicles))
+  const avgOccupancy = timelineData.value.reduce((sum, d) => sum + d.occupancy_rate, 0) / timelineData.value.length
+  
+  return {
+    maxLoadedVehicles: maxLoaded,
+    avgOccupancyRate: Math.round(avgOccupancy),
+    totalTimeWindows: timelineData.value.length
+  }
 })
 
-// 定时器
-let refreshTimer = null
-
-// 更新当前时间
+// 方法
 const updateCurrentTime = () => {
   const now = new Date()
   currentTime.value = now.toLocaleString('zh-CN', {
@@ -241,139 +275,161 @@ const updateCurrentTime = () => {
   })
 }
 
-// 加载天气影响数据
-const loadWeatherData = async () => {
+const loadTimelineData = async () => {
   try {
     loading.value = true
-    console.log('🌤️ 加载天气影响数据...')
-    
-    const response = await smartPassengerAPI.analyzeWeatherImpact({
-      time_window: '7d',
-      correlation_threshold: 0.3
-    })
-    
-    if (response.success) {
-      weatherData.value = response
-      console.log('✅ 天气影响数据加载成功')
-    } else {
-      console.error('❌ 天气影响数据加载失败:', response.message)
-    }
-  } catch (error) {
-    console.error('❌ 加载天气影响数据异常:', error)
-  } finally {
-    loading.value = false
-  }
-}
+    console.log('🚕 加载载客车辆时间线数据...', selectedDate.value)
 
-// 加载出租车需求数据
-const loadTaxiData = async () => {
-  try {
-    loading.value = true
-    console.log('🚕 加载出租车需求数据...')
-    
-    const response = await smartPassengerAPI.analyzeTaxiDemand({
-      historical_analysis: true,
-      hotspot_analysis: true,
-      time_window: '1h'
-    })
-    
-    if (response.success) {
-      taxiData.value = response
-      console.log('✅ 出租车需求数据加载成功')
-    } else {
-      console.error('❌ 出租车需求数据加载失败:', response.message)
-    }
-  } catch (error) {
-    console.error('❌ 加载出租车需求数据异常:', error)
-  } finally {
-    loading.value = false
-  }
-}
+    // 这里res就是后端返回的对象
+    const res = await smartPassengerAPI.getLoadedVehiclesTimeline(selectedDate.value, timeResolution.value)
 
-// 加载历史分析数据
-const loadHistoricalData = async () => {
-  try {
-    console.log('📊 加载历史分析数据...')
-    
-    const response = await smartPassengerAPI.getHistoricalAnalysis()
-    
-    if (response.success) {
-      realTimeData.value = response.historical_data
-      
-      // 更新历史统计
-      if (response.historical_data) {
-        realTimeStats.value = {
-          activePassengers: response.historical_data.passenger_stats?.active_passengers || 0,
-          loadedTaxis: response.historical_data.taxi_stats?.loaded_taxis || 0,
-          demandIndex: (response.historical_data.taxi_stats?.avg_demand_index * 100).toFixed(1) || 0,
-          weatherImpact: '晴天'
-        }
+    if (Array.isArray(res)) {
+      // 直接就是数据数组
+      timelineData.value = res
+      console.log('✅ 载客车辆时间线数据加载成功', res.length, '个时间段')
+      if (res.length > 0) {
+        selectedTimeWindow.value = res[0]
+      } else {
+        selectedTimeWindow.value = null
       }
-      
-      console.log('✅ 历史分析数据加载成功')
+    } else if (res && res.success && Array.isArray(res.data)) {
+      // 标准对象结构
+      timelineData.value = res.data
+      console.log('✅ 载客车辆时间线数据加载成功', res.data.length, '个时间段')
+      if (res.data.length > 0) {
+        selectedTimeWindow.value = res.data[0]
+      } else {
+        selectedTimeWindow.value = null
+      }
     } else {
-      console.error('❌ 历史分析数据加载失败:', response.message)
+      console.error('❌ 载客车辆时间线数据加载失败:', res)
+      timelineData.value = []
+      selectedTimeWindow.value = null
     }
   } catch (error) {
-    console.error('❌ 加载历史分析数据异常:', error)
-  }
-}
-
-// 刷新所有数据
-const refreshAllData = async () => {
-  await Promise.all([
-    loadWeatherData(),
-    loadTaxiData(),
-    loadHistoricalData()
-  ])
-}
-
-// 新增：加载每日天气影响数据
-const loadDailyWeatherImpact = async () => {
-  try {
-    loading.value = true
-    const now = Date.now() / 1000
-    // 取近7天数据
-    const start = now - 7 * 24 * 3600
-    const end = now
-    const res = await smartPassengerAPI.analyzeDailyWeatherImpact({ start_time: start, end_time: end })
-    if (res.success && res.daily_impacts.length > 0) {
-      dailyImpacts.value = res.daily_impacts
-      selectedDate.value = res.daily_impacts[0].date
-    }
-  } catch (e) {
-    console.error('加载每日天气影响失败', e)
+    console.error('❌ 加载载客车辆时间线数据异常:', error)
+    timelineData.value = []
+    selectedTimeWindow.value = null
   } finally {
     loading.value = false
   }
 }
+
+const selectTimeWindow = (timeWindow) => {
+  selectedTimeWindow.value = timeWindow
+}
+
+const activeIndex = ref(0)
+const isPlaying = ref(false)
+let timer = null
+
+function startPlay() {
+  if (timer) clearInterval(timer)
+  isPlaying.value = true
+  timer = setInterval(() => {
+    if (timelineData.value.length > 0) {
+      activeIndex.value = (activeIndex.value + 1) % timelineData.value.length
+    }
+  }, 70) // 0.7秒切换
+}
+
+function stopPlay() {
+  isPlaying.value = false
+  if (timer) {
+    clearInterval(timer)
+    timer = null
+  }
+}
+
+function togglePlay() {
+  if (isPlaying.value) {
+    stopPlay()
+  } else {
+    startPlay()
+  }
+}
+
+function getOccupancyColor(rate) {
+  if (rate >= 70) return '#f59e42'   // 橙色
+  if (rate >= 50) return '#67c23a'   // 绿色
+  if (rate >= 30) return '#409eff'   // 蓝色
+  return '#909399'                   // 灰色
+}
+
+function renderChart() {
+  if (!chartInstance && chartRef.value) {
+    chartInstance = echarts.init(chartRef.value)
+  }
+  if (!chartInstance) return
+  // 只展示到当前activeIndex
+  const times = timelineData.value.slice(0, activeIndex.value + 1).map(d => d.time_window)
+  const rates = timelineData.value.slice(0, activeIndex.value + 1).map(d => d.occupancy_rate)
+  const loaded = timelineData.value.slice(0, activeIndex.value + 1).map(d => d.loaded_vehicles)
+  chartInstance.setOption({
+    xAxis: { type: 'category', data: times, name: '时间' },
+    yAxis: [
+      { type: 'value', min: 0, max: 100, name: '载客率(%)' },
+      { type: 'value', min: 0, name: '载客车辆数', position: 'right' }
+    ],
+    series: [
+      {
+        data: rates,
+        type: 'line',
+        smooth: true,
+        areaStyle: {},
+        showSymbol: false,
+        lineStyle: { width: 3 },
+        name: '载客率',
+        yAxisIndex: 0
+      },
+      {
+        data: loaded,
+        type: 'line',
+        smooth: true,
+        showSymbol: false,
+        lineStyle: { width: 2, type: 'dashed' },
+        name: '载客车辆数',
+        yAxisIndex: 1
+      }
+    ],
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['载客率', '载客车辆数'] },
+    animation: true
+  })
+}
+
+watch([timelineData, activeIndex], () => {
+  renderChart()
+})
+
+// 定时器
+let timeTimer = null
 
 // 组件挂载
 onMounted(() => {
-  console.log('🚀 智能客流分析模块初始化...')
+  console.log('🚀 载客车辆分析模块初始化...')
   
   // 更新时间
   updateCurrentTime()
-  const timeTimer = setInterval(updateCurrentTime, 1000)
+  timeTimer = setInterval(updateCurrentTime, 1000)
   
-  // 初始化数据
-  refreshAllData()
-  loadDailyWeatherImpact() // 初始化每日天气影响数据
-  
-  // 设置定时刷新（每30秒）
-  refreshTimer = setInterval(() => {
-    loadHistoricalData()
-  }, 30000)
+  // 加载初始数据
+  loadTimelineData()
   
   // 清理定时器
   onUnmounted(() => {
-    if (refreshTimer) {
-      clearInterval(refreshTimer)
-    }
     if (timeTimer) {
       clearInterval(timeTimer)
     }
+    stopPlay() // 组件卸载时停止播放
+    if (chartInstance) chartInstance.dispose()
   })
+})
+
+// 当数据变化时，重置高亮和播放状态
+watch(() => timelineData.value, (newVal) => {
+  activeIndex.value = 0
+  stopPlay()
 })
 </script>
 
@@ -390,11 +446,6 @@ onMounted(() => {
 
 .animate-pulse {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-/* 卡片悬停效果 */
-.hover\:bg-white\/15:hover {
-  background-color: rgba(255, 255, 255, 0.15);
 }
 
 /* 渐变背景 */
