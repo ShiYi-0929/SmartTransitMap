@@ -107,7 +107,6 @@ class StatisticsResponse(TrafficResponse):
     vehicle_distribution: Optional[Dict[str, int]] = None
 
 # 新增时空分析相关模型
-
 class ODPair(BaseModel):
     """起点终点对模型"""
     origin_lat: float
@@ -169,7 +168,6 @@ class ODAnalysisRequest(BaseModel):
     aggregate_level: str = "individual"  # "individual", "grid", "zone"
 
 # API响应模型
-
 class SpatioTemporalResponse(BaseModel):
     """时空分析API响应"""
     success: bool
@@ -205,7 +203,6 @@ class ODFlowResponse(BaseModel):
     statistics: Dict[str, Any]
 
 # 路段分析相关模型
-
 class RoadSegment(BaseModel):
     """路段数据模型"""
     segment_id: str
@@ -272,7 +269,6 @@ class RoadAnalysisRequest(BaseModel):
     min_vehicles: int = 10  # 最小车辆数阈值
 
 # API响应模型
-
 class RoadSegmentResponse(BaseModel):
     """路段数据API响应"""
     success: bool
@@ -305,7 +301,6 @@ class RoadVisualizationResponse(BaseModel):
     legend_info: Dict[str, Any]
 
 # 智能客运监控相关模型
-
 class WeatherData(BaseModel):
     """天气数据模型"""
     timestamp: float
@@ -366,7 +361,6 @@ class SmartPassengerStatistics(BaseModel):
     peak_demand_periods: List[Dict[str, Any]]
 
 # 请求模型
-
 class SmartPassengerRequest(BaseModel):
     """智能客运监控请求参数"""
     analysis_type: str = "comprehensive"  # comprehensive, weather_impact, taxi_demand, correlation
@@ -390,7 +384,6 @@ class TaxiDemandRequest(BaseModel):
     include_forecasting: bool = False
 
 # API响应模型
-
 class SmartPassengerResponse(BaseModel):
     """智能客运监控API响应"""
     success: bool
@@ -429,7 +422,6 @@ class PassengerVisualizationResponse(BaseModel):
     time_series_data: Dict[str, Any]
 
 # 路程分析和订单速度分析相关模型
-
 class TripDistanceClassification(BaseModel):
     """路程距离分类模型"""
     date: str  # 日期 YYYY-MM-DD
@@ -478,7 +470,6 @@ class RoadSpeedAnalysisResult(BaseModel):
     road_speed_trends: List[Dict[str, Any]]
 
 # 请求模型
-
 class TripAnalysisRequest(BaseModel):
     """路程分析请求参数"""
     analysis_type: str = "classification"  # classification, trends, comparison
@@ -501,7 +492,6 @@ class OrderSpeedAnalysisRequest(BaseModel):
     }
 
 # API响应模型
-
 class TripAnalysisResponse(BaseModel):
     """路程分析API响应"""
     success: bool
@@ -517,3 +507,64 @@ class OrderSpeedAnalysisResponse(BaseModel):
     speed_analysis: RoadSpeedAnalysisResult
     visualization_data: Dict[str, Any]  # 热力图和图表数据
     processing_time: Optional[float] = None
+
+# 数据统计-TrafficStatistics.vue相关模型
+class TimeRangeRequest(BaseModel):
+    start_time: float
+    end_time: float
+
+class TrendRequest(TimeRangeRequest):
+    view_type: str = "distribution"
+
+class AreaStatsRequest(TimeRangeRequest):
+    sort_by: str = "vehicles"
+
+class TrendResponse(BaseModel):
+    data: List[int]
+    labels: List[str]
+
+class KeyMetric(BaseModel):
+    title: str
+    value: Union[str, float]
+    trend: float
+
+class MetricsResponse(BaseModel):
+    success: bool
+    message: str
+    data: List[KeyMetric]
+
+class AreaStat(BaseModel):
+    id: int
+    name: str
+    totalVehicles: int
+    avgSpeed: float
+    congestionRate: int
+    trafficLevel: str
+
+class AreaStatsResponse(BaseModel):
+    success: bool
+    message: str
+    data: List[AreaStat]
+
+class PeriodStat(BaseModel):
+    name: str
+    timeRange: str
+    avgVehicles: int
+    avgSpeed: float
+    status: str
+    statusClass: str
+
+class PeriodStatsResponse(BaseModel):
+    success: bool
+    message: str
+    data: List[PeriodStat]
+
+class DailyTrafficResponse(BaseModel):
+    success: bool
+    message: str
+    data: List[int]  # 24小时的车辆数数组
+
+class WeeklyTrafficResponse(BaseModel):
+    success: bool
+    message: str
+    data: List[Dict[str, Union[str, int]]]  # 按天的日期和车辆总数
