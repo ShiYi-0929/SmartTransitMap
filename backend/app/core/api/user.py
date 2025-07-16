@@ -14,7 +14,6 @@ from database.database import get_db
 from database import models
 from app.core.security import create_access_token, verify_password, get_password_hash, get_current_user
 from app.core.config import SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SENDER_EMAIL
-from app.core.api.face import read_csv_records # Import from face API
 
 router = APIRouter()
 
@@ -46,10 +45,6 @@ class UserInDB(BaseModel):
     email: EmailStr
     user_class: str
 
-class UserStatus(BaseModel):
-    user_class: str
-    face_registration_status: str
-
 class EmailSchema(BaseModel):
     email: EmailStr
 
@@ -80,32 +75,6 @@ async def read_users_me(current_user: models.UserInfo = Depends(get_current_user
         username=current_user.username,
         email=current_user.email,
         user_class=current_user.user_class,
-    )
-
-@router.get("/users/me/status", response_model=UserStatus, summary="获取当前用户的状态")
-async def get_user_status(current_user: models.UserInfo = Depends(get_current_user)):
-    """
-    获取当前登录用户的认证状态信息。
-    - user_class: 数据库中的用户等级 ('普通用户', '认证用户', '管理员')
-    - face_registration_status: 人脸认证状态 ('not_registered', 'pending', 'approved', 'rejected')
-    """
-    face_status = "not_registered"
-    try:
-        all_faces = read_csv_records()
-        # 注意：CSV中的ID是字符串，需要与数据库中的整型ID进行比较
-        user_id_str = str(current_user.userID)
-        for face in all_faces:
-            if face.get('id') == user_id_str:
-                face_status = face.get('status', 'unknown')
-                break
-    except Exception as e:
-        # 如果CSV读取失败，记录错误，但不要让整个请求失败
-        print(f"为用户 {current_user.userID} 获取人脸状态时出错: {e}")
-        face_status = "unknown" # 或者 'error'
-
-    return UserStatus(
-        user_class=current_user.user_class,
-        face_registration_status=face_status,
     )
 
 @router.put("/users/me", response_model=UserInDB, summary="更新当前用户信息")
@@ -282,19 +251,7 @@ async def login_for_access_token(form_data: UserLogin, db: Session = Depends(get
     # 用户验证成功，创建 access token
     access_token = create_access_token(subject=user.userID)
     
-    # Check face registration status
-    face_status = "not_registered"
-    try:
-        all_faces = read_csv_records()
-        for face in all_faces:
-            if face.get('id') == str(user.userID):
-                face_status = face.get('status', 'unknown')
-                break
-    except Exception:
-        # If csv reading fails, don't block login
-        pass
-
-    return {"access_token": access_token, "token_type": "bearer", "face_registration_status": face_status}
+    return {"access_token": access_token, "token_type": "bearer"}
 
 
 @router.post("/login-by-code", response_model=Token, summary="邮箱验证码登录")
@@ -429,6 +386,18 @@ async def reset_password_via_email(data: ResetPasswordSchema, db: Session = Depe
 @router.get("/ping", summary="服务探活")
 async def ping():
     """
-    一个简单的服务探活端点。
+    一个简单的端点，用于检查服务是否在线。
     """
-    return {"ping": "pong"} 
+    return {"message": "pong"} 
+
+@router.get("/pending-applications-count", summary="获取待处理的申请数量（仅管理员）")
+async def get_pending_applications_count(
+    db: Session = Depends(get_db),
+    current_user: models.UserInfo = Depends(get_current_user)
+):
+    if current_user.user_class != '管理员':
+        raise HTTPException(status_code=403, detail="只有管理员才能访问此资源")
+    
+    count = db.query(models.Apply).filter(models.Apply.result == 0).count()
+    
+    return {"pending_count": count} 

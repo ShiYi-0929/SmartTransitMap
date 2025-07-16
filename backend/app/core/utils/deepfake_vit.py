@@ -3,8 +3,6 @@ from PIL import Image
 import torch
 import os
 
-# --- 全局变量：模型和处理器 ---
-# 在应用启动时加载模型，避免每次请求都重新加载
 model = None
 processor = None
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -19,7 +17,6 @@ def load_deepfake_vit_model():
     if model_loaded:
         return
 
-    # 模型路径指向 `backend/models/deepfake_vit_model`
     relative_model_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "models", "deepfake_vit_model")
     model_path = os.path.normpath(os.path.abspath(relative_model_path))
 
@@ -27,7 +24,7 @@ def load_deepfake_vit_model():
     try:
         model = ViTForImageClassification.from_pretrained(model_path).to(device)
         processor = ViTImageProcessor.from_pretrained(model_path)
-        model.eval()  # 设置为评估模式
+        model.eval()
         model_loaded = True
         print("ViT Deepfake模型加载成功！")
     except Exception as e:
@@ -44,19 +41,12 @@ def predict_deepfake_vit(image: Image.Image) -> dict:
         return {"error": "ViT模型尚未加载"}
 
     try:
-        # 准备模型输入
         inputs = processor(images=image, return_tensors="pt").to(device)
-
-        # 模型推理
         with torch.no_grad():
             outputs = model(**inputs)
-        
-        # 获取预测结果
         logits = outputs.logits
         predicted_class_idx = logits.argmax(-1).item()
         prediction = model.config.id2label[predicted_class_idx]
-        
         return {"prediction": prediction, "raw_score": logits.softmax(dim=-1).tolist()}
-        
     except Exception as e:
         return {"error": f"ViT模型预测时发生错误: {e}"} 

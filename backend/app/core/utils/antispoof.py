@@ -5,7 +5,6 @@ import torch
 import joblib
 from typing import Tuple, Dict
 
-# 将 Quantum 相关函数从同级 predict_deepfake 模块导入
 from .predict_deepfake import (
     advanced_feature_encoder,
     create_optimized_circuit,
@@ -19,8 +18,6 @@ from qiskit_machine_learning.neural_networks import EstimatorQNN
 # ---------------------------------------------
 # 常量与全局缓存
 # ---------------------------------------------
-# 修正路径：直接从当前文件定位到 `backend/models` 目录
-# __file__ -> utils -> core -> app -> backend -> models
 BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 MODELS_DIR = os.path.join(BACKEND_DIR, "models")
 
@@ -128,7 +125,6 @@ def predict_single_frame(frame: np.ndarray) -> Dict:
     except Exception as e:
         print(f"[antispoof] ❌ Error during single frame prediction: {e}")
         return {"error": f"predict_error: {e}"}
-
 
 # ---------------------------------------------
 # 额外检测：光感

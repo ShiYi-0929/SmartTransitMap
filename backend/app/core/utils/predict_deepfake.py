@@ -1,5 +1,4 @@
 # 本文件从 QuantumFaceAntiSpoofing-main/predict_deepfake.py 复制而来，保持接口一致
-# 为缩短依赖路径，仅作极少修改（如相对路径问题），其他逻辑保持原样。
 
 import os
 import numpy as np
@@ -18,60 +17,41 @@ from tqdm import tqdm
 
 warnings.filterwarnings('ignore')
 
-# 配置参数
-IMAGE_SIZE = (8, 8)  # 输入图像尺寸
-NUM_QUBITS = 8  # 量子比特数
-
-# ---- 以下函数与原脚本一致 ----
-
-# ---------------------- 量子编码与特征工程 ----------------------
+IMAGE_SIZE = (8, 8)
+NUM_QUBITS = 8
 
 def quantum_amplitude_encoding(img_vector, target_qubits=8):
-    """将 256 维实向量振幅编码到 2**qubits 维复数量子态。"""
     target_length = 2 ** target_qubits
-
     if len(img_vector) > target_length:
         img_vector = img_vector[:target_length]
     elif len(img_vector) < target_length:
         padding = np.zeros(target_length - len(img_vector))
         img_vector = np.concatenate([img_vector, padding])
-
     normalized_vector = img_vector / (np.linalg.norm(img_vector) + 1e-8)
-
     try:
         state = Statevector(normalized_vector)
         complex_data = state.data.astype(np.complex128)
-
-        # 相位规范化
         phase = np.angle(complex_data)
         phase_normalized = (phase + np.pi) % (2 * np.pi) - np.pi
-
         encoded = np.abs(complex_data) * np.exp(1j * phase_normalized)
         return encoded
     except Exception:
-        # 退化到实数编码
         return normalized_vector.astype(np.complex128)
 
-
 def advanced_feature_encoder(X, amplification_factor=3):
-    """将复数量子态矩阵 X -> 实特征矩阵，用于后续经典/量子混合网络。"""
     amplitudes = np.abs(X)
     phases = np.angle(X)
-
     phase_median = np.median(phases, axis=1, keepdims=True)
     phase_std = np.std(phases, axis=1, keepdims=True) + 1e-8
     phases_normalized = (phases - phase_median) / phase_std
     phases_enhanced = np.tanh(phases_normalized * amplification_factor)
-
     log_amplitudes = np.log1p(amplitudes)
     normalized_amplitudes = amplitudes / (np.max(amplitudes, axis=1, keepdims=True) + 1e-8)
     phase_gradients = np.diff(phases, axis=1, prepend=phases[:, :1])
     amplitude_phase_product = amplitudes * np.cos(phases)
-
     amplitude_mean = np.mean(amplitudes, axis=1, keepdims=True)
     amplitude_var = np.var(amplitudes, axis=1, keepdims=True)
     phase_coherence = np.abs(np.mean(np.exp(1j * phases), axis=1, keepdims=True))
-
     features = np.concatenate([
         log_amplitudes,
         normalized_amplitudes,
@@ -82,42 +62,29 @@ def advanced_feature_encoder(X, amplification_factor=3):
         np.tile(amplitude_var, (1, amplitudes.shape[1])),
         np.tile(phase_coherence.real, (1, amplitudes.shape[1])),
     ], axis=1)
-
     return features
-
-
-# ---------------------- 量子电路与分类器 ----------------------
-
 
 def create_optimized_circuit(num_qubits=8):
     qc = QuantumCircuit(num_qubits)
     x_params = [Parameter(f"x{i}") for i in range(num_qubits)]
     theta_params = [Parameter(f"theta{i}") for i in range(6 * num_qubits)]
-
     for i in range(num_qubits):
         qc.h(i)
         qc.ry(x_params[i], i)
-
     param_idx = 0
     for _ in range(3):
         for i in range(num_qubits):
             qc.cx(i, (i + 1) % num_qubits)
-
         for i in range(num_qubits):
             qc.ry(theta_params[param_idx], i)
             qc.rz(theta_params[param_idx + num_qubits], i)
             param_idx += 1
         param_idx += num_qubits
-
     return qc
 
-
 class OptimizedQuantumClassifier(nn.Module):
-    """经典前置 -> 量子层 -> 经典后置 的混合网络。"""
-
     def __init__(self, qnn, input_dim, num_qubits):
         super().__init__()
-
         self.feature_processor = nn.Sequential(
             nn.Linear(input_dim, 256),
             nn.BatchNorm1d(256),
@@ -128,7 +95,6 @@ class OptimizedQuantumClassifier(nn.Module):
             nn.ReLU(),
             nn.Dropout(0.2),
         )
-
         self.quantum_adapter = nn.Sequential(
             nn.Linear(128, num_qubits * 2),
             nn.LayerNorm(num_qubits * 2),
@@ -136,9 +102,7 @@ class OptimizedQuantumClassifier(nn.Module):
             nn.Linear(num_qubits * 2, num_qubits),
             nn.LayerNorm(num_qubits),
         )
-
         self.qnn = TorchConnector(qnn)
-
         self.post_processor = nn.Sequential(
             nn.Linear(1, 64),
             nn.BatchNorm1d(64),
@@ -150,13 +114,11 @@ class OptimizedQuantumClassifier(nn.Module):
             nn.Dropout(0.3),
             nn.Linear(32, 1),
         )
-
         self.residual_processor = nn.Sequential(
             nn.Linear(128, 32),
             nn.ReLU(),
             nn.Linear(32, 1),
         )
-
     def forward(self, x):
         processed_features = self.feature_processor(x)
         quantum_input = self.quantum_adapter(processed_features)
