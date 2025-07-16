@@ -32,6 +32,6 @@ export const changePassword = (data) => {
   return axios.post('/user/users/me/change-password', data);
 };
 
-export const getPendingApplicationsCount = () => {
-    return axios.get('/user/pending-applications-count');
+export const getUserStatus = () => {
+  return axios.get('/user/users/me/status');
 }; 

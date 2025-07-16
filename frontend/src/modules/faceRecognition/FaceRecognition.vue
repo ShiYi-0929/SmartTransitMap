@@ -8,12 +8,14 @@
           <!-- Non-admin tabs -->
           <template v-if="!isAdmin">
             <li
+              v-if="isNormalUser"
               :class="{ active: currentTab === 'face-enter' }"
               @click="currentTab = 'face-enter'"
             >
               人脸录入
             </li>
             <li
+              v-if="isAuthenticatedUser"
               :class="{ active: currentTab === 'face-verify' }"
               @click="currentTab = 'face-verify'"
             >
@@ -143,7 +145,11 @@
       </section>
 
       <!-- Face Verify Tab -->
-      <section v-else-if="currentTab === 'face-verify'" class="verify-section">
+      <section
+        v-else-if="currentTab === 'face-verify'"
+        class="verify-section"
+        :style="{ backgroundColor: flashBackgroundColor }"
+      >
         <div class="face-verify-box">
           <!-- Initial state before verification -->
           <template v-if="!isVerifying">
@@ -151,7 +157,9 @@
               <img :src="avatarImage" alt="人脸示例" class="face-img" />
             </div>
             <p>将面部放入识别框内</p>
-            <button class="verify-btn" @click="startVerify">开始验证</button>
+            <button class="verify-btn" @click="startVerify" :disabled="!faceApiReady">
+              {{ faceApiReady ? "开始验证" : "模型加载中..." }}
+            </button>
           </template>
 
           <!-- State during verification -->
@@ -162,9 +170,12 @@
             </div>
 
             <!-- 眨眼检测状态显示 -->
-            <div class="blink-status" v-if="blinkDetectionActive">
-              <p class="blink-instruction">{{ blinkInstruction }}</p>
-              <div class="blink-progress">
+            <div
+              class="blink-status"
+              v-if="blinkDetectionActive || flashLivenessState.active"
+            >
+              <p class="blink-instruction">{{ currentInstruction }}</p>
+              <div class="blink-progress" v-if="blinkDetectionActive">
                 <div class="blink-indicator" :class="{ detected: isBlinking }">
                   {{ isBlinking ? "检测到眨眼" : "请眨眼" }}
                 </div>
@@ -325,20 +336,39 @@
 <script>
 import avatar from "@/assets/avatar.png";
 import { useMainStore } from "@/store";
-import { getUserProfile } from "@/api/user"; // 引入API
+import { getUserProfile } from "@/api/user"; // 获取用户ID
+import { createLog } from "@/api/log"; // 导入日志API
+import { verifyFace } from "@/api/face"; // 导入新的人脸验证API
+import * as faceapi from "face-api.js"; // 导入 face-api
+import {
+  startRecording,
+  stopRecording,
+  takeScreenshot,
+  capturePageScreenshot, // 导入新的截图工具
+  dataURLToBlob,
+} from "@/utils/mediaCapture"; // 导入媒体捕获工具
 
 export default {
   name: "FaceRecognition",
   data() {
     const userRole = localStorage.getItem("user-class")?.trim();
-    const isAdmin = userRole === "管理员";
+    // 根据角色确定默认显示的 tab
+    let defaultTab = "";
+    if (userRole === "管理员") {
+      defaultTab = "face-pending";
+    } else if (userRole === "认证用户") {
+      defaultTab = "face-verify";
+    } else {
+      defaultTab = "face-enter";
+    }
 
     return {
-      currentTab: isAdmin ? "face-pending" : "face-enter", // 默认显示人脸验证 tab，可根据需求调整
+      currentTab: defaultTab, // 默认显示人脸验证 tab，可根据需求调整
       avatarImage: avatar,
       isVerifying: false,
       verifyStream: null,
       entryStream: null,
+      isRecording: false, // 新增：跟踪录制状态
       snapshotDataUrl: null,
       snapshotImages: [],
       captureInProgress: false,
@@ -386,12 +416,55 @@ export default {
       lastBlinkTime: 0, // 上次眨眼时间
       pendingFaces: [], // For admin pending approvals
       refreshOnSuccess: false, // 控制成功后是否刷新页面
+      recordStartTs: 0, // 新增：录制开始时间戳
+      // --- 新增：屏幕闪烁活体检测状态 ---
+      flashLivenessState: {
+        active: false,
+        status: "pending", // pending, flashing, analyzing, success, failed
+        colors: ["#FF00FF", "#00FF00", "#0000FF"],
+        rgbColors: [
+          [255, 0, 255],
+          [0, 255, 0],
+          [0, 0, 255],
+        ],
+        currentIndex: -1,
+      },
+      faceApiReady: false, // 新增：face-api 模型加载状态
+      wakeLock: null, // 新增：屏幕唤醒锁
+      resolveMsgModal: null, // 新增：用于Promise化的弹窗
+      currentUserId: null, // 新增：用于存储当前登录的用户ID
     };
   },
   computed: {
+    flashBackgroundColor() {
+      const state = this.flashLivenessState;
+      if (state.active && state.status === "flashing" && state.currentIndex > -1) {
+        return state.colors[state.currentIndex];
+      }
+      return "transparent"; // 默认或原始背景色
+    },
+    currentInstruction() {
+      if (this.flashLivenessState.active) {
+        const state = this.flashLivenessState;
+        if (state.status === "flashing" || state.status === "analyzing") {
+          return `请正对屏幕... (${state.currentIndex + 1}/${state.colors.length})`;
+        } else if (state.status === "success") {
+          return "高级活体检测通过！";
+        } else if (this.isRecognizing) {
+          return "正在进行最终安全验证...";
+        }
+      }
+      return this.blinkInstruction; // 默认显示眨眼指令
+    },
     isAdmin() {
       // 从 localStorage 获取角色信息
       return localStorage.getItem("user-class")?.trim() === "管理员";
+    },
+    isAuthenticatedUser() {
+      return localStorage.getItem("user-class")?.trim() === "认证用户";
+    },
+    isNormalUser() {
+      return localStorage.getItem("user-class")?.trim() === "普通用户";
     },
     themeClass() {
       return this.isAdmin ? "admin-theme" : "user-theme";
@@ -450,6 +523,7 @@ export default {
       try {
         const profile = await getUserProfile();
         this.entryName = String(profile.userID); // Ensure the ID is a string
+        this.currentUserId = String(profile.userID); // 储存当前用户ID
       } catch (error) {
         console.error("获取用户ID失败:", error);
         this.showMsg("无法加载您的用户ID，请刷新页面或重新登录。");
@@ -507,8 +581,16 @@ export default {
     async startVerify() {
       this.isVerifying = true;
       this.verifyResult = "";
-      this.$nextTick(() => {
-        this.startVerifyCamera();
+      this.isRecording = false; // 重置录制状态
+
+      this.$nextTick(async () => {
+        await this.startVerifyCamera();
+        if (this.verifyStream) {
+          // 在验证流程开始时启动录制
+          startRecording(this.verifyStream);
+          this.isRecording = true;
+          this.recordStartTs = Date.now();
+        }
       });
     },
     async startVerifyCamera() {
@@ -670,6 +752,17 @@ export default {
         .then(() => {
           const store = useMainStore();
           this.showMsg("录入成功，请等待管理员复核！");
+          // 日志记录
+          import("@/utils/mediaCapture").then(({ dataURLToBlob }) => {
+            if (this.snapshotDataUrl) {
+              const blob = dataURLToBlob(this.snapshotDataUrl);
+              createLog(
+                { logtype: "FACE_REGISTER", description: "用户人脸录入成功" },
+                blob,
+                null
+              );
+            }
+          });
           // 清除可能存在的拒绝标记，以便轮询可以重新开始
           localStorage.removeItem("hasSeenRejection");
           store.setPollingState(true); // 启动轮询
@@ -685,14 +778,47 @@ export default {
         .catch((err) => {
           console.error(err);
           this.showMsg("录入失败，请检查后端日志");
+          // 录入失败也记录日志
+          import("@/utils/mediaCapture").then(({ dataURLToBlob }) => {
+            let blob = null;
+            if (this.snapshotDataUrl) {
+              blob = dataURLToBlob(this.snapshotDataUrl);
+            }
+            createLog(
+              { logtype: "REGISTER_FAILED", description: "人脸录入失败" },
+              blob,
+              null
+            );
+          });
         })
         .finally(() => {
           this.isSaving = false;
         });
     },
     captureVerify() {
-      // 首先启动眨眼检测
+      // 流程第一步：启动眨眼检测
       this.startBlinkDetection();
+    },
+
+    // --- 新方法：处理活体检测组件的结果 ---
+    async handleLivenessChallengeResult(result) {
+      this.showLivenessChallenge = false; // 关闭挑战组件
+
+      if (result.success) {
+        // 活体检测成功，立即截图并进行人脸识别
+        this.showMsg("光感检测通过，正在进行最终识别...");
+        const screenshot = await takeScreenshot(this.$refs.videoPlayer);
+        // 记录光感阶段截图日志
+        this.createScreenshotLog(screenshot, "光感检测通过", "主动光感检测成功截图");
+        this.performFaceRecognition(screenshot);
+      } else {
+        // 活体检测失败
+        this.showMsg(`活体检测失败: ${result.reason || "未知原因"}`);
+        await this.finalizeVerificationAndLog(
+          "恶意操作",
+          `活体检测失败: ${result.reason}`
+        );
+      }
     },
 
     startBlinkDetection() {
@@ -755,15 +881,7 @@ export default {
             // 检测眨眼模式：从睁眼到闭眼再到睁眼
             if (this.detectBlinkPattern() && !this.blinkDetected) {
               this.blinkDetected = true;
-              this.isBlinking = true;
-              this.blinkInstruction = "眨眼检测成功！正在进行人脸识别...";
-              console.log("眨眼检测成功！");
-
-              // 延迟一秒后进行人脸识别
-              setTimeout(() => {
-                this.stopBlinkDetection();
-                this.performFaceRecognition();
-              }, 1000);
+              this.handleBlinkSuccess(); // 调用新的处理函数
             } else {
               this.isBlinking = result.is_blinking;
             }
@@ -847,46 +965,259 @@ export default {
       return false;
     },
 
-    performFaceRecognition() {
+    // --- 新增：高级活体检测（屏幕闪烁）---
+    async startFlashLiveness() {
+      // --- 请求屏幕唤醒锁 ---
+      try {
+        if ("wakeLock" in navigator) {
+          this.wakeLock = await navigator.wakeLock.request("screen");
+          console.log("屏幕唤醒锁已激活");
+        }
+      } catch (err) {
+        console.error(`无法激活屏幕唤醒锁: ${err.name}, ${err.message}`);
+      }
+
+      const state = this.flashLivenessState;
+      state.active = true;
+      state.status = "pending";
+
       const video = this.$refs.videoPlayer;
       const canvas = this.$refs.snapshotCanvas;
-      if (!video || !this.verifyStream) {
-        this.showMsg("摄像头未就绪！");
+      if (!video || !canvas) {
+        this.showMsg("无法启动高级活体检测：视频组件未就绪。");
+        state.active = false;
         return;
       }
-      this.isRecognizing = true; // 禁用按钮
-      this.verifyResult = ""; // 清空上一次结果
+
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      if (!context) {
+        this.showMsg("无法启动高级活体检测：画布上下文获取失败。");
+        state.active = false;
+        return;
+      }
 
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      const ctx = canvas.getContext("2d");
-      ctx.translate(canvas.width, 0);
-      ctx.scale(-1, 1);
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      const dataUrl = canvas.toDataURL("image/png");
 
-      fetch(`${this.API_BASE}/verify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: dataUrl }),
-      })
-        .then((res) => res.json())
-        .then((json) => {
-          if (json.result === "unknown") {
-            this.verifyResult = "unknown";
-            this.showUnknownModal = true;
-          } else {
-            this.verifyResult = json.result;
+      for (let i = 0; i < state.colors.length; i++) {
+        state.currentIndex = i;
+        let detection = null;
+        let attempts = 0;
+
+        // Step 1: 分析阶段，获取闪烁前颜色
+        state.status = "analyzing";
+        await new Promise((r) => setTimeout(r, 300));
+
+        // 加入重试机制
+        while (!detection && attempts < 5) {
+          detection = await faceapi
+            .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+            .withFaceLandmarks();
+          if (!detection) {
+            await new Promise((r) => setTimeout(r, 100)); // 稍作等待再重试
+            attempts++;
           }
-        })
-        .catch((err) => {
-          console.error(err);
-          this.showMsg("识别失败");
-        })
-        .finally(() => {
-          this.isRecognizing = false; // 无论成功失败，都恢复按钮
+        }
+
+        if (!detection) {
+          state.status = "no_face";
+          break;
+        }
+
+        context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+        const baselineColor = this.getAverageColor(
+          context,
+          detection.landmarks,
+          "leftCheek"
+        );
+        if (!baselineColor) {
+          state.status = "failed";
+          break;
+        }
+
+        // Step 2: 闪烁阶段，获取反射后颜色
+        state.status = "flashing";
+        await new Promise((r) => setTimeout(r, 700));
+
+        detection = null; // 重置 detection
+        attempts = 0; // 重置 attempts
+        while (!detection && attempts < 5) {
+          detection = await faceapi
+            .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+            .withFaceLandmarks();
+          if (!detection) {
+            await new Promise((r) => setTimeout(r, 100));
+            attempts++;
+          }
+        }
+
+        if (!detection) {
+          state.status = "no_face";
+          break;
+        }
+
+        context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+        const reflectedColor = this.getAverageColor(
+          context,
+          detection.landmarks,
+          "leftCheek"
+        );
+        if (!reflectedColor) {
+          state.status = "failed";
+          break;
+        }
+
+        // Step 3: 验证逻辑
+        const challengeRGB = state.rgbColors[i];
+        const deltaR = reflectedColor[0] - baselineColor[0];
+        const deltaG = reflectedColor[1] - baselineColor[1];
+        const deltaB = reflectedColor[2] - baselineColor[2];
+
+        let passed = false;
+        if (challengeRGB[2] === 255) {
+          // Purple or Blue light
+          passed = deltaB > deltaG;
+        } else if (challengeRGB[1] === 255) {
+          // Green light
+          passed = deltaG > deltaR;
+        }
+
+        if (!passed) {
+          state.status = "failed";
+          break;
+        }
+      }
+
+      // --- Finalize ---
+      if (state.status === "failed" || state.status === "no_face") {
+        const reason = state.status === "failed" ? "光感认证失败" : "未检测到人脸";
+        this.showMsg(`活体检测失败: ${reason}`);
+        await this.finalizeVerificationAndLog("恶意操作", `高级活体检测失败: ${reason}`);
+        this.isVerifying = false;
+      } else {
+        // 活体检测通过，更新指令并调用最后一步
+        state.status = "success";
+        this.currentInstruction = "高级活体检测通过！正在进行最终安全验证...";
+
+        const screenshot = await takeScreenshot(this.$refs.videoPlayer);
+        this.createScreenshotLog(screenshot, "光感检测通过", "高级光感检测成功截图");
+
+        // 调用包含所有后端检查的最终验证函数
+        await this.performBackendVerifications(screenshot);
+      }
+
+      state.active = false;
+
+      // --- 释放屏幕唤醒锁 ---
+      if (this.wakeLock) {
+        this.wakeLock.release().then(() => {
+          console.log("屏幕唤醒锁已释放");
+          this.wakeLock = null;
         });
+      }
+    },
+
+    getAverageColor(context, landmarks, boxIndex) {
+      const getBox = {
+        leftCheek: landmarks.getJawOutline().slice(1, 5),
+        rightCheek: landmarks.getJawOutline().slice(12, 16),
+        forehead: landmarks.getJawOutline().slice(6, 11),
+      };
+
+      const points = getBox[boxIndex];
+      if (!points || points.length === 0) return null;
+
+      const x = Math.min(...points.map((p) => p.x));
+      const y = Math.min(...points.map((p) => p.y));
+      const width = Math.max(...points.map((p) => p.x)) - x;
+      const height = Math.max(...points.map((p) => p.y)) - y;
+
+      if (width <= 0 || height <= 0) return null;
+
+      const imageData = context.getImageData(x, y, width, height);
+      const data = imageData.data;
+      let r = 0,
+        g = 0,
+        b = 0;
+
+      for (let i = 0; i < data.length; i += 4) {
+        r += data[i];
+        g += data[i + 1];
+        b += data[i + 2];
+      }
+      const pixelCount = data.length / 4;
+      return [r / pixelCount, g / pixelCount, b / pixelCount];
+    },
+
+    async performFaceRecognition(initialScreenshot = null) {
+      this.isRecognizing = true;
+      try {
+        const response = await fetch(`${this.API_BASE}/verify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: initialScreenshot }),
+        });
+
+        if (!response.ok) {
+          const errJson = await response.json();
+          console.error(`后端识别步骤出错 (仅日志): ${errJson.detail || "未知错误"}`);
+          return "未知用户";
+        }
+        const json = await response.json();
+        return json.result; // "Siegfried" or "unknown"
+      } catch (e) {
+        console.error("调用后端识别接口失败 (仅日志):", e);
+        return "未知用户";
+      } finally {
+        this.isRecognizing = false;
+      }
+    },
+
+    async finalizeVerificationAndLog(logType, description, resetUI = true) {
+      // 1. 获取全页截图
+      const pageScreenshotUrl = await capturePageScreenshot();
+      const screenshotBlob = pageScreenshotUrl ? dataURLToBlob(pageScreenshotUrl) : null;
+
+      let videoBlob = null;
+      if (this.isRecording) {
+        // 2. 保证最短录制时间
+        const elapsedTime = Date.now() - this.recordStartTs;
+        if (elapsedTime < 1500) {
+          await new Promise((resolve) => setTimeout(resolve, 1500 - elapsedTime));
+        }
+        // 3. 停止录制并获取 video blob
+        videoBlob = await stopRecording();
+        this.isRecording = false;
+      }
+
+      // 4. 上传日志和媒体文件
+      await createLog(
+        { logtype: logType, description: description },
+        screenshotBlob,
+        videoBlob
+      );
+
+      // 5. 重置验证状态，以便用户可以重新开始
+      this.isVerifying = false;
+      if (resetUI) {
+        this.isRecognizing = false;
+        this.verifyResult = "";
+        this.currentInstruction = this.blinkInstruction;
+        this.blinkDetectionActive = false;
+        this.isBlinking = false;
+        this.blinkDetected = false;
+        this.blinkHistory = [];
+        this.lastBlinkTime = 0;
+        this.blinkCountdown = 10;
+        this.blinkDetectionInterval = null;
+        this.blinkDetectionTimer = null;
+      }
+    },
+
+    handleVerificationFailure() {
+      // 此函数现在可以被废弃，所有逻辑都进入 finalizeVerificationAndLog
+      // 为保持兼容，暂时指向新函数
+      this.finalizeVerificationAndLog("恶意操作", "验证失败（旧的调用点）");
     },
     closeUnknownModal() {
       this.showUnknownModal = false;
@@ -1048,14 +1379,23 @@ export default {
     showMsg(text) {
       this.msgModalText = text;
       this.msgModalVisible = true;
+      // 返回一个Promise，以便我们可以等待用户确认
+      return new Promise((resolve) => {
+        this.resolveMsgModal = resolve;
+      });
     },
     closeMsgModal() {
       this.msgModalVisible = false;
       this.msgModalText = "";
-      // 如果是在成功录入后，则跳转到主页
+      // 解析Promise
+      if (this.resolveMsgModal) {
+        this.resolveMsgModal();
+        this.resolveMsgModal = null;
+      }
+      // 如果是在成功录入或验证后，则跳转到主页
       if (this.refreshOnSuccess) {
         this.refreshOnSuccess = false; // 重置标志
-        this.$router.push('/home'); // 跳转到主页
+        this.$router.push("/home"); // 跳转到主页
       }
     },
     // ===== 用户删除弹窗相关 =====
@@ -1128,16 +1468,100 @@ export default {
         this.fetchCurrentUserId();
       }
     },
+    // --- 截图日志工具 ---
+    async createScreenshotLog(dataUrl, logtype, description) {
+      try {
+        const blob = dataURLToBlob(dataUrl);
+        await createLog({ logtype, description }, blob, null);
+      } catch (e) {
+        console.error("上传截图日志失败", e);
+      }
+    },
+    async setupFaceAPI() {
+      try {
+        const modelsUrl = "/models"; // Models are in public/models
+        await Promise.all([
+          faceapi.nets.tinyFaceDetector.loadFromUri(modelsUrl),
+          faceapi.nets.faceLandmark68Net.loadFromUri(modelsUrl),
+        ]);
+        this.faceApiReady = true;
+        console.log("FaceAPI models for liveness check loaded successfully.");
+      } catch (error) {
+        console.error("Error loading face-api.js models:", error);
+        this.showMsg("高级活体检测模型加载失败，请刷新页面重试。");
+      }
+    },
+    // --- 旧的眨眼检测成功后的截图逻辑，现在将在新的流程中被调用 ---
+    async handleBlinkSuccess() {
+      this.isBlinking = true; // 保持UI状态
+      this.blinkInstruction = "眨眼检测成功！";
+      console.log("眨眼检测成功！");
+      this.stopBlinkDetection();
+
+      // **截图1: 眨眼成功**
+      const screenshot = await takeScreenshot(this.$refs.videoPlayer);
+      this.createScreenshotLog(screenshot, "眨眼检测通过", "眨眼检测成功截图");
+
+      // 在开始前提示用户调亮屏幕
+      await this.showMsg(
+        "即将开始高级光感检测，请将您的屏幕亮度调至最大，以保证检测准确性。"
+      );
+
+      // 启动第二阶段的屏幕闪烁检测
+      this.startFlashLiveness();
+    },
+    async performBackendVerifications(finalScreenshot) {
+      this.isRecognizing = true;
+      try {
+        const json = await verifyFace({ image: finalScreenshot });
+
+        // 如果代码能执行到这里，说明所有后端检查（包括ID匹配）都已通过
+        this.refreshOnSuccess = true;
+        await this.showMsg(`验证成功！欢迎您，${json.result}。即将返回首页。`);
+
+      } catch (e) {
+        // request工具已经处理了非2xx状态码，这里主要捕获网络错误或API返回的特定错误
+        const reason = e.response?.data?.detail || e.message || "未知错误";
+        let userMessage = "";
+        
+        if (reason === "face_mismatch") {
+          userMessage = "警告：验证的人脸与当前登录用户不符。即将返回首页。";
+          this.refreshOnSuccess = true; // 确认后同样需要跳转
+        } else if (reason === "light_failed") {
+          userMessage = "验证失败：光照环境异常。";
+        } else if (reason === "deepfake_vit_failed") {
+          userMessage = "验证失败：检测到深度伪造风险。";
+        } else if (reason === "未检测到人脸") {
+          userMessage = "验证失败：无法清晰识别人脸。";
+        } else {
+          userMessage = `验证失败: ${reason}`;
+        }
+        
+        // 由于后端的日志记录现在依赖于token，失败日志应由后端记录。
+        // 前端只在完全无法连接到后端时记录自己的日志。
+        if (!e.response) { // e.g., network error
+           await this.finalizeVerificationAndLog("系统错误", "前端调用验证接口异常");
+        }
+        await this.showMsg(userMessage); // 显示错误后暂停
+      } finally {
+        this.isRecognizing = false;
+        this.isVerifying = false; // 无论成功失败，最后都重置状态
+      }
+    },
   },
   mounted() {
+    this.setupFaceAPI(); // 在组件挂载时加载模型
+
     if (this.isAdmin) {
       this.fetchApprovedFaces();
       this.fetchPendingFaces();
     } else {
+      this.fetchCurrentUserId(); // 为所有非管理员用户获取ID
       if (this.currentTab === "face-enter") {
-        this.startEntryCamera();
-        this.startRealtimeFaceCheck();
-        this.fetchCurrentUserId(); // 获取当前用户ID
+        this.$nextTick(() => {
+          this.startEntryCamera();
+          this.startRealtimeFaceCheck();
+        });
       }
     }
   },

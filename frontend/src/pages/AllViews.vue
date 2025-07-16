@@ -817,23 +817,39 @@ export default {
         }
 
         ElNotification({ title: "成功", message: "登录成功!", type: "success" });
-        
+
         // Prepare face registration status notification for the home page
         const faceStatus = response.face_registration_status;
         const notifiedKey = `notified_face_status_for_${this.loginUserID}`;
         let notification_payload = null;
 
-        if (faceStatus && faceStatus !== 'pending' && faceStatus !== 'not_registered' && !localStorage.getItem(notifiedKey)) {
-          if (faceStatus === 'approved') {
-            notification_payload = { title: "认证状态", message: "恭喜！您的人脸认证申请已通过。", type: "success" };
-          } else if (faceStatus === 'rejected') {
-            notification_payload = { title: "认证状态", message: "很遗憾，您的人脸认证申请已被拒绝，详情请联系管理员。", type: "warning" };
+        if (
+          faceStatus &&
+          faceStatus !== "pending" &&
+          faceStatus !== "not_registered" &&
+          !localStorage.getItem(notifiedKey)
+        ) {
+          if (faceStatus === "approved") {
+            notification_payload = {
+              title: "认证状态",
+              message: "恭喜！您的人脸认证申请已通过。",
+              type: "success",
+            };
+          } else if (faceStatus === "rejected") {
+            notification_payload = {
+              title: "认证状态",
+              message: "很遗憾，您的人脸认证申请已被拒绝，详情请联系管理员。",
+              type: "warning",
+            };
           }
-          localStorage.setItem(notifiedKey, 'true');
+          localStorage.setItem(notifiedKey, "true");
         }
-        
+
         // Navigate with notification payload in state
-        this.$router.push({ name: 'Home', state: { notification: notification_payload } });
+        this.$router.push({
+          name: "Home",
+          state: { notification: notification_payload },
+        });
       } catch (error) {
         const detail = error.response?.data?.detail || "登录失败，请检查您的凭据。";
         ElNotification({ title: "登录失败", message: detail, type: "error" });
