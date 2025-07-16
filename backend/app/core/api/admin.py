@@ -45,6 +45,17 @@ async def get_processed_applications(
     processed_apps = db.query(models.Apply).filter(models.Apply.result.in_([1, 2])).all()
     return processed_apps
 
+@router.get("/pending-applications-count", summary="获取待处理的申请数量（仅管理员）")
+async def get_pending_applications_count(
+    db: Session = Depends(get_db),
+    current_user: models.UserInfo = Depends(get_current_user)
+):
+    if current_user.user_class != '管理员':
+        raise HTTPException(status_code=403, detail="只有管理员才能访问此资源")
+    
+    count = db.query(models.Apply).filter(models.Apply.result == 0).count()
+    return {"pending_count": count}
+
 @router.put("/applications/{apply_id}", summary="处理升级申请")
 async def process_application(
     apply_id: int = Path(..., title="申请ID", ge=1),
