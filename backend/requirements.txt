@@ -14,3 +14,10 @@ pillow
 dlib
 opencv-python
 scipy 
+qiskit==0.45.2
+qiskit-machine-learning==0.7.2
+torch
+scikit-learn
+joblib 
+tqdm
+transformers 
