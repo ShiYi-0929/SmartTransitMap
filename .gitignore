@@ -20,3 +20,5 @@ instance/ # 如果 instance 目录只存放日志和临时文件
 
 
 /backend/detect/road_detection/data/
+
+/backend/detect/road_detection/models/runs/
