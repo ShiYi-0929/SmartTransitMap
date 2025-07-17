@@ -20,10 +20,3 @@ instance/ # 如果 instance 目录只存放日志和临时文件
 
 
 /backend/detect/road_detection/data/
-
-/frontend/node_modules/
-
-/backend/detect/road_detection/data/yolo_data_dataset/
-
-# 训练运行输出文件
-/backend/detect/road_detection/models/runs/

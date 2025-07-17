@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>眨眼检测调试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .video-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+        video {
+            width: 400px;
+            height: 300px;
+            border: 2px solid #ddd;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .status.detecting {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+        }
+        .status.blinking {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+        }
+        .ear-values {
+            margin: 10px 0;
+            font-family: monospace;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .start-btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+        }
+        .stop-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>眨眼检测调试工具</h1>
+    <div class="video-container">
+        <video id="videoPlayer" autoplay playsinline></video>
+        <canvas id="canvas" style="display: none;"></canvas>
+    </div>
+    
+    <div>
+        <button id="startBtn" class="start-btn">开始检测</button>
+        <button id="stopBtn" class="stop-btn" disabled>停止检测</button>
+    </div>
+    
+    <div id="status" class="status">点击开始检测按钮</div>
+    <div id="earValues" class="ear-values"></div>
+    <div id="log" style="margin-top: 20px; background-color: #f8f9fa; padding: 10px; border-radius: 5px; max-height: 300px; overflow-y: auto;"></div>
+
+    <script>
+        const video = document.getElementById('videoPlayer');
+        const canvas = document.getElementById('canvas');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusDiv = document.getElementById('status');
+        const earValuesDiv = document.getElementById('earValues');
+        const logDiv = document.getElementById('log');
+        
+        let stream = null;
+        let detectionInterval = null;
+        
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                log('摄像头启动成功');
+            } catch (error) {
+                log(`摄像头启动失败: ${error.message}`);
+            }
+        }
+        
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+                log('摄像头已停止');
+            }
+        }
+        
+        async function detectBlink() {
+            if (!video.videoWidth) return;
+            
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            
+            try {
+                const response = await fetch('/api/face/detect_blink', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: dataUrl })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || '检测失败');
+                }
+                
+                const result = await response.json();
+                
+                if (result.has_face) {
+                    const earText = `左眼: ${result.left_ear}, 右眼: ${result.right_ear}, 平均: ${result.avg_ear}`;
+                    earValuesDiv.textContent = earText;
+                    
+                    if (result.is_blinking) {
+                        statusDiv.textContent = '检测到眨眼！';
+                        statusDiv.className = 'status blinking';
+                        log(`眨眼检测成功 - ${earText}`);
+                    } else {
+                        statusDiv.textContent = '未检测到眨眼';
+                        statusDiv.className = 'status detecting';
+                    }
+                } else {
+                    statusDiv.textContent = '未检测到人脸';
+                    statusDiv.className = 'status detecting';
+                    earValuesDiv.textContent = '';
+                }
+            } catch (error) {
+                log(`检测错误: ${error.message}`);
+                statusDiv.textContent = `错误: ${error.message}`;
+                statusDiv.className = 'status';
+            }
+        }
+        
+        startBtn.addEventListener('click', async () => {
+            await startCamera();
+            detectionInterval = setInterval(detectBlink, 300);
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            log('开始眨眼检测');
+        });
+        
+        stopBtn.addEventListener('click', () => {
+            if (detectionInterval) {
+                clearInterval(detectionInterval);
+                detectionInterval = null;
+            }
+            stopCamera();
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            statusDiv.textContent = '检测已停止';
+            statusDiv.className = 'status';
+            earValuesDiv.textContent = '';
+            log('停止眨眼检测');
+        });
+    </script>
+</body>
+</html> 
